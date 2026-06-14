@@ -1,0 +1,7 @@
+{
+  "security_notes_stub": true,
+  "security_notes_date_format": "short",
+  "stale_cron_days": 7,
+  "quiet_site_days": 30,
+  "_config_name": "acuity_multisite_status_server.settings"
+}

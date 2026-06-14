@@ -1,0 +1,9 @@
+name = Multisite Status Server (Acuity)
+description = Collects status reports from Multisite Status clients and tracks core, PHP and database versions, cron health, and contrib versions across all your sites.
+package = Acuity
+type = module
+backdrop = 1.x
+; Requires Backdrop core 1.28.0+ for the icon() API. Backdrop has no minimum
+; core-version directive in .info, so this floor is enforced in the module's
+; hook_requirements() (see acuity_multisite_status_server.install).
+configure = admin/config/acuity-multisite-status-server

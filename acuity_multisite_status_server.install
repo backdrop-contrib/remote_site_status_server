@@ -1,0 +1,262 @@
+<?php
+
+/**
+ * @file
+ * Install, schema and uninstall callbacks for Multisite Status Server (Acuity).
+ */
+
+/**
+ * Implements hook_requirements().
+ *
+ * The admin UI renders icons via the core icon() API, added in Backdrop
+ * 1.28.0. Backdrop has no minimum-core-version directive in .info (the
+ * "backdrop = 1.x" line is only the core-compatibility series), so the floor
+ * is enforced here: block installation on, and flag at runtime, older core.
+ *
+ * @param string $phase
+ *   The phase in which requirements are checked: 'install' or 'runtime'.
+ *
+ * @return array
+ *   An array of requirements, keyed by a unique machine name.
+ */
+function acuity_multisite_status_server_requirements($phase) {
+  $requirements = array();
+
+  if (version_compare(BACKDROP_VERSION, '1.28.0', '<')) {
+    $requirements['acuity_multisite_status_server_core'] = array(
+      'title' => t('Multisite Status Server'),
+      'value' => BACKDROP_VERSION,
+      'description' => t('Multisite Status Server requires Backdrop core 1.28.0 or later (for the icon() API).'),
+      'severity' => REQUIREMENT_ERROR,
+    );
+  }
+
+  return $requirements;
+}
+
+/**
+ * Implements hook_uninstall().
+ *
+ * Removes module configuration. The status tables are dropped automatically by
+ * the schema API; nothing here modifies any client site.
+ */
+function acuity_multisite_status_server_uninstall() {
+  config('acuity_multisite_status_server.settings')->delete();
+}
+
+/**
+ * Implements hook_schema().
+ *
+ * Three lean tables hold the whole fleet inventory:
+ *   - site         one row per registered client site (identity = key_hash).
+ *   - project      one row per distinct project, fleet-wide; also the place the
+ *                  authoritative latest/security versions are stored.
+ *   - site_project the join: which module/theme/layout is installed on which
+ *                  site, at what version, linked to its project row.
+ */
+function acuity_multisite_status_server_schema() {
+  $schema['acuity_multisite_status_site'] = array(
+    'description' => 'Registered client sites reporting their status to this server.',
+    'fields' => array(
+      'id' => array(
+        'type' => 'serial',
+        'not null' => TRUE,
+      ),
+      'label' => array(
+        'description' => 'Operator-facing name for the site; also serves as the optional freetext grouping label.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'url' => array(
+        'description' => 'The site URL. Used for identification and cross-referencing in the operator CRM.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'key_hash' => array(
+        'description' => 'SHA-256 hash of the per-site API key. The plaintext key is shown once on generation and never stored. The key is the site identity.',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'status' => array(
+        'description' => 'Lifecycle state: active or revoked. A revoked site can no longer authenticate but keeps its history.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => 'active',
+      ),
+      'backdrop_version' => array(
+        'description' => 'Backdrop core version last reported by the site.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => FALSE,
+        'default' => NULL,
+      ),
+      'php_version' => array(
+        'description' => 'PHP version last reported by the site.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => FALSE,
+        'default' => NULL,
+      ),
+      'db_driver' => array(
+        'description' => 'Database driver last reported (e.g. mysql, mariadb).',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => FALSE,
+        'default' => NULL,
+      ),
+      'db_version' => array(
+        'description' => 'Database server version string last reported.',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => FALSE,
+        'default' => NULL,
+      ),
+      'cron_last' => array(
+        'description' => 'UNIX timestamp of the site\'s last cron run, as reported. Freshness/health signal only.',
+        'type' => 'int',
+        'not null' => FALSE,
+        'default' => NULL,
+      ),
+      'last_seen' => array(
+        'description' => 'UNIX timestamp of the most recent authenticated report from this site.',
+        'type' => 'int',
+        'not null' => FALSE,
+        'default' => NULL,
+      ),
+    ),
+    'primary key' => array('id'),
+    'unique keys' => array(
+      // Fast indexed lookup on the hashed key during report authentication.
+      'key_hash' => array('key_hash'),
+    ),
+  );
+
+  $schema['acuity_multisite_status_project'] = array(
+    'description' => 'Distinct projects seen across the fleet, with the authoritative latest/security versions and the operator security-review layer.',
+    'fields' => array(
+      'id' => array(
+        'type' => 'serial',
+        'not null' => TRUE,
+      ),
+      'project' => array(
+        'description' => 'The .info project machine name. The release-history feed is keyed by project, not module.',
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'type' => array(
+        'description' => 'Project type: module, theme or layout.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'latest_version' => array(
+        'description' => 'Latest stable release from the update server. NULL when the project has no upstream feed (custom project).',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => FALSE,
+        'default' => NULL,
+      ),
+      'latest_security_version' => array(
+        'description' => 'Latest release flagged as a security release. NULL when none or no upstream feed.',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => FALSE,
+        'default' => NULL,
+      ),
+      'latest_checked_at' => array(
+        'description' => 'UNIX timestamp when the latest-version feed was last fetched. The only freshness signal under manual checking.',
+        'type' => 'int',
+        'not null' => FALSE,
+        'default' => NULL,
+      ),
+      'security_reviewed_version' => array(
+        'description' => 'The security version the operator last assessed. Stamped from latest_security_version when marking reviewed.',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => FALSE,
+        'default' => NULL,
+      ),
+      'security_status' => array(
+        'description' => 'Derived review state: needs_review when latest_security_version is newer than security_reviewed_version, otherwise reviewed.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => FALSE,
+        'default' => NULL,
+      ),
+      'security_notes' => array(
+        'description' => 'Append-only, newest-first free-text log of operator judgements about security releases for this project.',
+        'type' => 'text',
+        'not null' => FALSE,
+      ),
+      'project_url' => array(
+        'description' => 'Project page URL from the Backdrop release-history feed link element. Populated on fetch; NULL for custom projects with no upstream feed.',
+        'type' => 'varchar',
+        'length' => 512,
+        'not null' => FALSE,
+        'default' => NULL,
+      ),
+    ),
+    'primary key' => array('id'),
+    'unique keys' => array(
+      // One inventory row per project + type.
+      'project_type' => array('project', 'type'),
+    ),
+  );
+
+  $schema['acuity_multisite_status_site_project'] = array(
+    'description' => 'Join row: a specific module/theme/layout installed on a site, at a version, linked to its project.',
+    'fields' => array(
+      'id' => array(
+        'type' => 'serial',
+        'not null' => TRUE,
+      ),
+      'site_id' => array(
+        'description' => 'References acuity_multisite_status_site.id.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'project_id' => array(
+        'description' => 'References acuity_multisite_status_project.id. Carries the authoritative latest version.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'name' => array(
+        'description' => 'The specific module/theme/layout machine name (a project may ship several).',
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'installed_version' => array(
+        'description' => 'The version of this item installed on this site, as reported.',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => FALSE,
+        'default' => NULL,
+      ),
+    ),
+    'primary key' => array('id'),
+    'unique keys' => array(
+      // Each item name appears once per site; reports wholesale-replace these.
+      'site_name' => array('site_id', 'name'),
+    ),
+    'indexes' => array(
+      'site_id' => array('site_id'),
+      'project_id' => array('project_id'),
+    ),
+  );
+
+  return $schema;
+}

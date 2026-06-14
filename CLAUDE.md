@@ -96,11 +96,11 @@ README).
   generate a per-site key, store it HASHED, show plaintext ONCE; support
   revoke/reactivate and regenerate. Build the form, its save logic and menu routes —
   but NOT the site listing (that is a View the operator builds).
-- `POST /api/v1/report` — authenticate by key (hash + look up site; reject
+- `POST /api/v1/acuity-multisite-status/report` — authenticate by key (hash + look up site; reject
   unknown/revoked), attribute the report to the KEY's site, upsert the site row,
   ensure project rows, replace that site's installed-version rows. INERT response.
   Payload size cap + rate limit.
-- `GET /api/v1/status` — health/connection test; returns server version. Inert.
+- `GET /api/v1/acuity-multisite-status/status` — health/connection test; returns server version. Inert.
 - **Authoritative latest-version check — MANUAL only** (a "Get latest versions"
   button; no scheduled cron): for each distinct project, fetch its release-history
   feed from the Backdrop update server (reuse Update Manager's lower fetch/parse
@@ -135,30 +135,117 @@ README).
 COMPLETED WORK
 ==================================================
 
-- None yet. Pre-development.
+Slice 1 — schema + registration + key issuance:
+- hook_schema(): site / project / site_project tables (lean, per the brief's
+  data model). key_hash uniquely indexed for fast auth lookup.
+- hook_requirements(): blocks install on Backdrop core < 1.28.0 (icon() API).
+  Backdrop has no minimum-core-version .info directive, so it is enforced here.
+- hook_permission(): dedicated 'administer acuity multisite status'.
+- Site add/edit form with show-once key issuance: a 64-char hex key is minted,
+  stored SHA-256-hashed (key the identity), and shown once on the edit form
+  (stashed in session across the redirect, with a clipboard Copy button using
+  the core icon() API). Regenerate key; revoke/reactivate (one toggle route);
+  delete (removes site + its site_project rows, keeps fleet-wide project rows).
+- Coded site list at the module landing page (admin/config/acuity-multisite-
+  status-server) — Label/URL/Status/versions/cron/last-seen + Edit, conditional
+  Revoke|Reinstate, Delete. No Views dependency. "Register a site" local action.
+- Save/revoke/reinstate/delete redirect back to the list; Regenerate stays on
+  the edit form so the new key remains visible.
+
+Slice 2 — ingest + status API (tested live on bertie.test):
+- POST api/v1/acuity-multisite-status/report: Bearer auth (SHA-256 -> key_hash;
+  rejects unknown AND revoked), core flood rate limit (30/hr/site -> 429),
+  256 KB payload cap (-> 413), invalid JSON -> 400, non-POST -> 405. Ingest in a
+  transaction: upsert site facts + last_seen, ensure project rows (project+type),
+  wholesale-replace site_project rows. Inert {"status":"received"}.
+- GET api/v1/acuity-multisite-status/status: authenticates, returns server
+  version (system_get_info) + recognised site label. Inert.
+- Helpers: json_response(), authorize_request(), ingest_report(),
+  ensure_project(), generate_key(), hash_key().
+
+Slice 3 — authoritative latest-version check:
+- acuity_multisite_status_server.fetch.inc added with all fetch/parse/batch
+  logic. No dependency on the Update Manager module being enabled.
+- acuity_multisite_status_server_fetch_project_releases(): fetches one
+  project's release-history XML from the Backdrop update server
+  (https://updates.backdropcms.org/release-history/{project}/1.x),
+  returns latest stable (no version_extra) and latest security
+  ('Security update' term) version strings, or FALSE for no-upstream projects.
+- acuity_multisite_status_server_parse_release_xml(): adapted from core's
+  update_parse_xml() — same structure, independent of update module.
+- acuity_multisite_status_server_compare_versions(): strips the core-compat
+  prefix (1.x-) then delegates to PHP version_compare(). Load-bearing for
+  picking latest from a feed and for the security_status flip.
+- Batch: one operation per project, ordered alphabetically. 20 s HTTP timeout
+  per project. Watchdog on network error; no-upstream projects counted
+  separately and left with NULL latest_*.
+- security_status derived automatically on each fetch: needs_review when
+  latest_security_version > security_reviewed_version, else reviewed, else
+  NULL (no security releases). Notes-stub prepend is a @todo pending the
+  settings page (slice: server settings).
+- state_set('acuity_multisite_status_server_last_fetch') records the batch
+  completion time; shown on the admin overview as "last checked N ago".
+- MENU_LOCAL_ACTION at .../fetch-updates — appears as a button on the main
+  admin page alongside "Register a site".
+
+Slice 4 (partial) — Views:
+- hook_views_data(): all three tables exposed with fields, and the
+  site -> site_project -> project relationships (both directions). Standard
+  filter/sort/argument handlers. Date handlers on cron_last/last_seen/
+  latest_checked_at for "stale cron" / "quiet site" / freshness filters.
+- Project type filter: custom views_handler_filter_in_operator subclass with
+  Module/Theme/Layout options. Registered via hook_views_handlers() so Views
+  finds the class file on a warm cache.
+- site_project table.join definitions added so Views can traverse the bridge
+  table implicitly in both directions (project→sites, site→projects).
+- project_url stored from feed link element; Views URL field.
+- Security status logic: when security release is superseded by a newer stable,
+  needs_review only fires if fleet sites are on a vulnerable version; otherwise
+  flag clears. Operator-review flow unchanged when security release is current.
 
 
 ==================================================
 CURRENT STATE
 ==================================================
 
-Pre-development. Design finalised in acuity_multisite_status_build_brief.md.
-No code written, no repo created yet. Client half tracked separately in
-/modules/acuity_multisite_status_client.
+Slices 1, 2, 3, settings and the data half of 4 are built and the API is
+verified end-to-end on bertie.test. Tables hold real data. Slice 3 populates
+project.latest_version / latest_security_version / security_status on demand.
+Settings page at .../settings tab; project security review at .../projects/%/review.
+
+Project security review form UX improved: redirect after save removed (form
+reloads in place); Cancel link added with ?destination support so Views links
+can return the operator to their view after saving.
+
+Not yet built:
+- The version-aware Views filter handlers (installed < latest, and the
+  unreviewed-security condition) — see the @todo in views.inc.
+- Views export: hook_views_default_views() — operator to finalise views first,
+  then export and pack into the module.
+- Pre-release security audit before first GitHub push.
 
 
 ==================================================
-KEY FILES (planned)
+KEY FILES
 ==================================================
 
-- acuity_multisite_status_server.module — /api/v1/report and /api/v1/status
-  handlers, key auth, ingest, latest-version fetch trigger
-- acuity_multisite_status_server.admin.inc — site add/edit form, settings form,
-  dashboard helpers
+- acuity_multisite_status_server.module — /api/v1/acuity-multisite-status/report
+  and /api/v1/acuity-multisite-status/status handlers, key auth, ingest, key
+  helpers, hook_menu/permission/config_info/views_api. (latest-version trigger
+  still to come in slice 3.)
+- acuity_multisite_status_server.admin.inc — site list page, site add/edit form
+  + key issuance/show-once, regenerate, revoke/reactivate, delete. (settings
+  form still to come.)
 - acuity_multisite_status_server.install — hook_schema() for site / project /
-  site_project; hook_uninstall()
+  site_project; hook_requirements() (core >= 1.28.0); hook_uninstall().
 - acuity_multisite_status_server.views.inc — hook_views_data() (fields,
-  site→site_project→project relationships, filter/computed handlers)
+  site→site_project→project relationships; version-aware filter handlers TODO).
+- acuity_multisite_status_server.fetch.inc — manual latest-version batch
+  (fetch_updates_form, batch_operation, fetch_project_releases, parse_release_xml,
+  compare_versions). Notes-stub prepend wired; reads settings at batch time.
+- js/acuity_multisite_status_server.admin.js, css/...admin.css — Copy-key button.
+- config/acuity_multisite_status_server.settings.json — default config (stub
+  toggle on, date format 'short', stale 7 days, quiet 30 days).
 
 
 ==================================================
@@ -177,11 +264,22 @@ Before closing each session, always:
 PLANNED / NEXT
 ==================================================
 
-See the build order in acuity_multisite_status_build_brief.md. Suggested first
-slice: the site / project / site_project schema + the site add/edit form + key
-issuance (build-order steps 1–2), since everything hangs off those tables. Confirm
-structure and the registration/key storage approach, and ask questions, before
-writing code. Discuss with user before starting.
+See the build order in acuity_multisite_status_build_brief.md. Next up:
+
+- Version-aware Views filter handlers: "installed < latest" and unreviewed-
+  security condition filters that compare across the install→project join using
+  acuity_multisite_status_server_compare_versions(). Marked @todo in views.inc.
+- Client module: status gathering, settings form + test-connection, cron
+  fire-and-forget reporting. Server defines the contract; keep client in step.
+
+Then hardening (slice 7) and CHANGELOG/version for the first GitHub release.
+
+Potential future features:
+- Review link page-position preservation: a small JS behaviour in admin JS that
+  reads ?page=N from the current URL and appends it (URL-encoded) to any
+  destination= parameter on review links, so the operator returns to the correct
+  page of the view after saving. Only fires when ?page= is present (page 1 needs
+  no change). See Backdrop.behaviors.acuityReviewDestination sketch in session notes.
 
 
 ==================================================
@@ -211,6 +309,8 @@ CONSTRAINTS (PERMANENT)
 - "Modules" is shorthand for modules, themes AND layouts — all in scope.
 - Projects with no upstream feed (the operator's own custom themes/modules) have no
   authoritative latest — show inventory-only, never falsely flag out of date.
+- When a project has no stable release yet, latest_version falls back to the newest
+  published pre-release (beta/rc). Stable is always preferred when one exists.
 - Build hook_views_data() integration (with relationships + handlers) and the site
   add/edit form + menu routes ONLY. Do NOT generate views, displays, lists or menu
   items for the dashboard — the operator builds and exports those.

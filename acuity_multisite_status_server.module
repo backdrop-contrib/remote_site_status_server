@@ -1,0 +1,448 @@
+<?php
+
+/**
+ * @file
+ * Multisite Status Server (Acuity) module.
+ *
+ * Central site that registers managed sites, issues per-site keys, and (in
+ * later slices) ingests status reports and checks authoritative latest
+ * versions. This file holds the routing, permission, config declaration and
+ * the shared key helpers; the registration form lives in the .admin.inc.
+ */
+
+/**
+ * Implements hook_views_api().
+ */
+function acuity_multisite_status_server_views_api() {
+  return array(
+    'api' => 3,
+    'path' => backdrop_get_path('module', 'acuity_multisite_status_server'),
+  );
+}
+
+/**
+ * Implements hook_views_handlers().
+ *
+ * Registers custom handler classes so Views knows which file to include when
+ * instantiating them. Without this, Views may try to use the class after its
+ * cache is warm without having included views.inc, leaving the class undefined.
+ */
+function acuity_multisite_status_server_views_handlers() {
+  return array(
+    'info' => array(
+      'path' => backdrop_get_path('module', 'acuity_multisite_status_server'),
+    ),
+    'handlers' => array(
+      'acuity_multisite_status_server_handler_filter_project_type' => array(
+        'parent' => 'views_handler_filter_in_operator',
+        'file' => 'acuity_multisite_status_server.views.inc',
+      ),
+      'acuity_multisite_status_server_handler_filter_needs_review' => array(
+        'parent' => 'views_handler_filter',
+        'file' => 'acuity_multisite_status_server.views.inc',
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_config_info().
+ */
+function acuity_multisite_status_server_config_info() {
+  $config['acuity_multisite_status_server.settings'] = array(
+    'label' => 'Multisite Status Server settings',
+    'group' => 'system',
+  );
+
+  return $config;
+}
+
+/**
+ * Implements hook_permission().
+ *
+ * The aggregated fleet data is effectively an attack map of the operator's
+ * estate, so registration, settings and the dashboard sit behind a dedicated
+ * permission rather than the broad 'administer site configuration'.
+ */
+function acuity_multisite_status_server_permission() {
+  return array(
+    'administer acuity multisite status' => array(
+      'title' => t('Administer Multisite Status'),
+      'description' => t('Register sites, issue and revoke keys, and view the fleet status dashboard.'),
+      'restrict access' => TRUE,
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ *
+ * Registration is an admin UI action, not an API. We build the add/edit/
+ * regenerate/revoke/delete routes with stable paths so the operator's
+ * site-listing View can link an "Add new site" button at them. We do NOT
+ * build the listing itself — that is a View the operator builds and exports.
+ */
+function acuity_multisite_status_server_menu() {
+  $base = 'admin/config/acuity-multisite-status-server';
+
+  $items[$base] = array(
+    'title' => 'Multisite Status Server',
+    'description' => 'Register sites and monitor the status of your Backdrop fleet.',
+    'page callback' => 'acuity_multisite_status_server_sites_page',
+    'access arguments' => array('administer acuity multisite status'),
+    'file' => 'acuity_multisite_status_server.admin.inc',
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  $items[$base . '/sites/add'] = array(
+    'title' => 'Register a site',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('acuity_multisite_status_server_site_form'),
+    'access arguments' => array('administer acuity multisite status'),
+    'file' => 'acuity_multisite_status_server.admin.inc',
+    'type' => MENU_LOCAL_ACTION,
+  );
+
+  $items[$base . '/sites/%/edit'] = array(
+    'title' => 'Edit site',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('acuity_multisite_status_server_site_form', 4),
+    'access arguments' => array('administer acuity multisite status'),
+    'file' => 'acuity_multisite_status_server.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items[$base . '/sites/%/revoke'] = array(
+    'title' => 'Revoke or reactivate site',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('acuity_multisite_status_server_site_revoke_form', 4),
+    'access arguments' => array('administer acuity multisite status'),
+    'file' => 'acuity_multisite_status_server.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items[$base . '/sites/%/delete'] = array(
+    'title' => 'Delete site',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('acuity_multisite_status_server_site_delete_form', 4),
+    'access arguments' => array('administer acuity multisite status'),
+    'file' => 'acuity_multisite_status_server.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items[$base . '/settings'] = array(
+    'title' => 'Settings',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('acuity_multisite_status_server_settings_form'),
+    'access arguments' => array('administer acuity multisite status'),
+    'file' => 'acuity_multisite_status_server.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  $items[$base . '/projects/%/review'] = array(
+    'title' => 'Security review',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('acuity_multisite_status_server_project_review_form', 4),
+    'access arguments' => array('administer acuity multisite status'),
+    'file' => 'acuity_multisite_status_server.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items[$base . '/fetch-updates'] = array(
+    'title' => 'Fetch latest versions',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('acuity_multisite_status_server_fetch_updates_form'),
+    'access arguments' => array('administer acuity multisite status'),
+    'file' => 'acuity_multisite_status_server.fetch.inc',
+    'type' => MENU_LOCAL_ACTION,
+  );
+
+  // API endpoints. Public paths; authentication is by Bearer site key, handled
+  // inside each callback (so access callback is TRUE here). Namespaced under
+  // the system name to avoid colliding with other API modules on the server.
+  $items['api/v1/acuity-multisite-status/report'] = array(
+    'title' => 'Multisite Status report',
+    'page callback' => 'acuity_multisite_status_server_report',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['api/v1/acuity-multisite-status/status'] = array(
+    'title' => 'Multisite Status status',
+    'page callback' => 'acuity_multisite_status_server_status',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+ * Generate a new high-entropy per-site API key.
+ *
+ * Returns a 256-bit random token as 64 hex characters. The plaintext is shown
+ * to the operator once on generation and never stored; only its hash is kept.
+ *
+ * @return string
+ *   A 64-character hexadecimal key.
+ */
+function acuity_multisite_status_server_generate_key() {
+  return bin2hex(random_bytes(32));
+}
+
+/**
+ * Hash a plaintext API key for storage and lookup.
+ *
+ * Uses a fast indexed hash (SHA-256) rather than a slow password hash: these
+ * are high-entropy random tokens looked up on every report, so bcrypt/argon
+ * would be the wrong tool. The same function is used to store the hash on
+ * generation and to look the key up during report authentication.
+ *
+ * @param string $key
+ *   The plaintext API key.
+ *
+ * @return string
+ *   The 64-character hexadecimal SHA-256 hash.
+ */
+function acuity_multisite_status_server_hash_key($key) {
+  return hash('sha256', $key);
+}
+
+/**
+ * Output a JSON response and stop.
+ *
+ * Clears any buffered output first so Backdrop's page HTML cannot contaminate
+ * the API body, and exits directly to stop shutdown hooks appending content
+ * after the JSON. Responses are intentionally inert: acknowledgements only,
+ * never instructions a client parses-and-executes.
+ *
+ * @param array $data
+ *   The response payload to JSON-encode.
+ * @param int $status_code
+ *   The HTTP status code to send. Defaults to 200.
+ */
+function acuity_multisite_status_server_json_response(array $data, $status_code = 200) {
+  while (ob_get_level()) {
+    ob_end_clean();
+  }
+  $json = json_encode($data);
+  http_response_code($status_code);
+  header('Content-Type: application/json');
+  header('X-Content-Type-Options: nosniff');
+  header('Content-Length: ' . strlen($json));
+  print $json;
+  exit;
+}
+
+/**
+ * Authenticate an API request by its Bearer site key.
+ *
+ * The key is the site's identity: the plaintext Bearer token is hashed and
+ * looked up against the indexed key_hash column. Falls back to
+ * apache_request_headers() for servers that strip Authorization from $_SERVER.
+ * Unknown keys and revoked sites are both rejected (returned as FALSE) without
+ * distinguishing between them, so a leaked key reveals nothing.
+ *
+ * @return object|false
+ *   The site row from acuity_multisite_status_site on success, FALSE otherwise.
+ */
+function acuity_multisite_status_server_authorize_request() {
+  $authorization = '';
+
+  if (!empty($_SERVER['HTTP_AUTHORIZATION'])) {
+    $authorization = $_SERVER['HTTP_AUTHORIZATION'];
+  }
+  elseif (function_exists('apache_request_headers')) {
+    $headers = apache_request_headers();
+    if (!empty($headers['Authorization'])) {
+      $authorization = $headers['Authorization'];
+    }
+  }
+
+  if (stripos($authorization, 'Bearer ') !== 0) {
+    return FALSE;
+  }
+
+  $key = trim(substr($authorization, 7));
+  if ($key === '') {
+    return FALSE;
+  }
+
+  $site = db_select('acuity_multisite_status_site', 's')
+    ->fields('s')
+    ->condition('key_hash', acuity_multisite_status_server_hash_key($key))
+    ->execute()
+    ->fetchObject();
+
+  if (!$site || $site->status === 'revoked') {
+    return FALSE;
+  }
+
+  return $site;
+}
+
+/**
+ * Page callback for POST api/v1/acuity-multisite-status/report.
+ *
+ * Ingests a status report from a Multisite Status client. Authenticates by
+ * Bearer site key, rate-limits per site, caps the payload size, then applies
+ * the report to the inventory tables. The response is inert: a bare
+ * acknowledgement carrying nothing the client acts on.
+ */
+function acuity_multisite_status_server_report() {
+  if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    acuity_multisite_status_server_json_response(array('status' => 'error', 'error' => 'method_not_allowed'), 405);
+  }
+
+  $site = acuity_multisite_status_server_authorize_request();
+  if (!$site) {
+    acuity_multisite_status_server_json_response(array('status' => 'error', 'error' => 'unauthorized'), 401);
+  }
+
+  // Per-site rate limit: reports are daily fire-and-forget, so 30/hour is ample
+  // headroom for retries and testing while capping a leaked-key flood.
+  $flood_id = 'acuity_mss_site_' . $site->id;
+  if (!flood_is_allowed('acuity_multisite_status_report', 30, 3600, $flood_id)) {
+    acuity_multisite_status_server_json_response(array('status' => 'error', 'error' => 'rate_limited'), 429);
+  }
+
+  // Payload cap (256 KB). A report of 100+ projects is only a few KB, so this
+  // is purely an abuse guard.
+  $body = file_get_contents('php://input');
+  if (strlen($body) > 262144) {
+    acuity_multisite_status_server_json_response(array('status' => 'error', 'error' => 'payload_too_large'), 413);
+  }
+
+  $data = json_decode($body);
+  if (!is_object($data)) {
+    acuity_multisite_status_server_json_response(array('status' => 'error', 'error' => 'invalid_payload'), 400);
+  }
+
+  acuity_multisite_status_server_ingest_report($site, $data);
+  flood_register_event('acuity_multisite_status_report', 3600, $flood_id);
+
+  acuity_multisite_status_server_json_response(array('status' => 'received'));
+}
+
+/**
+ * Apply a client status report to the inventory tables.
+ *
+ * Everything is attributed to the authenticated site — the key is the identity,
+ * so any site identifier in the payload is ignored and cannot overwrite another
+ * site's record. Updates the site's reported facts and last_seen, ensures a
+ * project row per reported project, and wholesale-replaces this site's
+ * installed-version rows. Wrapped in a transaction so a partial or malformed
+ * report never leaves the site half-updated (it simply retries next cron).
+ *
+ * @param object $site
+ *   The authenticated site row.
+ * @param object $data
+ *   The decoded report payload.
+ */
+function acuity_multisite_status_server_ingest_report($site, $data) {
+  $transaction = db_transaction();
+
+  // 1. Update the site's reported facts and mark it seen.
+  db_update('acuity_multisite_status_site')
+    ->fields(array(
+      'backdrop_version' => isset($data->backdrop_version) ? (string) $data->backdrop_version : NULL,
+      'php_version' => isset($data->php_version) ? (string) $data->php_version : NULL,
+      'db_driver' => isset($data->db_driver) ? (string) $data->db_driver : NULL,
+      'db_version' => isset($data->db_version) ? (string) $data->db_version : NULL,
+      'cron_last' => isset($data->cron_last) ? (int) $data->cron_last : NULL,
+      'last_seen' => REQUEST_TIME,
+    ))
+    ->condition('id', $site->id)
+    ->execute();
+
+  // 2/3. Wholesale-replace this site's installed-version rows. Collecting by
+  // machine name first dedupes a malformed payload before the unique-key insert.
+  db_delete('acuity_multisite_status_site_project')
+    ->condition('site_id', $site->id)
+    ->execute();
+
+  if (!empty($data->projects) && is_array($data->projects)) {
+    $items = array();
+    foreach ($data->projects as $project) {
+      // Each item needs at least its own name and a project key to join on.
+      if (empty($project->name) || empty($project->project)) {
+        continue;
+      }
+      $items[(string) $project->name] = $project;
+    }
+
+    foreach ($items as $name => $project) {
+      $type = !empty($project->type) ? (string) $project->type : 'module';
+      $project_id = acuity_multisite_status_server_ensure_project((string) $project->project, $type);
+      db_insert('acuity_multisite_status_site_project')
+        ->fields(array(
+          'site_id' => $site->id,
+          'project_id' => $project_id,
+          'name' => $name,
+          'installed_version' => isset($project->installed_version) ? (string) $project->installed_version : NULL,
+        ))
+        ->execute();
+    }
+  }
+}
+
+/**
+ * Return the project row id for a project machine name + type, creating it.
+ *
+ * The fleet-wide project row is both the inventory entry and where the
+ * authoritative latest/security versions are later stored by the manual
+ * latest-version check. Reports only ensure the row exists; they never set the
+ * latest_* fields. Keyed by project + type, since one project can ship several
+ * modules sharing a version.
+ *
+ * @param string $project
+ *   The .info project machine name.
+ * @param string $type
+ *   The project type: module, theme or layout.
+ *
+ * @return int
+ *   The acuity_multisite_status_project row id.
+ */
+function acuity_multisite_status_server_ensure_project($project, $type) {
+  $id = db_select('acuity_multisite_status_project', 'p')
+    ->fields('p', array('id'))
+    ->condition('project', $project)
+    ->condition('type', $type)
+    ->execute()
+    ->fetchField();
+
+  if ($id) {
+    return $id;
+  }
+
+  return db_insert('acuity_multisite_status_project')
+    ->fields(array(
+      'project' => $project,
+      'type' => $type,
+    ))
+    ->execute();
+}
+
+/**
+ * Page callback for GET api/v1/acuity-multisite-status/status.
+ *
+ * Health and connection test for the client's test button. Authenticates the
+ * caller by Bearer site key and returns the server version plus the recognised
+ * site label so the client can confirm its key maps to the right site. Inert —
+ * carries no instructions.
+ */
+function acuity_multisite_status_server_status() {
+  $site = acuity_multisite_status_server_authorize_request();
+  if (!$site) {
+    acuity_multisite_status_server_json_response(array('status' => 'error', 'error' => 'unauthorized'), 401);
+  }
+
+  $info = system_get_info('module', 'acuity_multisite_status_server');
+
+  acuity_multisite_status_server_json_response(array(
+    'status' => 'ok',
+    'service' => 'acuity_multisite_status_server',
+    'version' => !empty($info['version']) ? $info['version'] : NULL,
+    'site' => $site->label,
+  ));
+}

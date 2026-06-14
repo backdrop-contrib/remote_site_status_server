@@ -1,0 +1,42 @@
+/**
+ * @file
+ * Admin styling for Multisite Status Server (Acuity).
+ */
+
+/* Make the one-time new-key fieldset stand out. */
+.acuity-new-key {
+  border-color: #d4a017;
+  background-color: #fdf6e3;
+}
+
+/* Mute revoked sites in the registration list. */
+.acuity-sites-list tr.acuity-site-revoked {
+  opacity: 0.6;
+}
+
+/* Keep the key field and Copy button on one row. */
+.acuity-key-copy {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.acuity-key-copy .acuity-key-value {
+  flex: 1 1 auto;
+  max-width: 100%;
+  font-family: monospace;
+}
+
+/* Copy button: icon and label side by side. */
+.acuity-key-copy .acuity-copy-key {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+}
+
+.acuity-key-copy .acuity-copy-key svg,
+.acuity-key-copy .acuity-copy-key img {
+  width: 1em;
+  height: 1em;
+}
