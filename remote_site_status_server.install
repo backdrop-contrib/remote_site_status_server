@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Install, schema and uninstall callbacks for Multisite Status Server (Acuity).
+ * Install, schema and uninstall callbacks for Remote Site Status Server.
  */
 
 /**
@@ -19,14 +19,14 @@
  * @return array
  *   An array of requirements, keyed by a unique machine name.
  */
-function acuity_multisite_status_server_requirements($phase) {
+function remote_site_status_server_requirements($phase) {
   $requirements = array();
 
   if (version_compare(BACKDROP_VERSION, '1.28.0', '<')) {
-    $requirements['acuity_multisite_status_server_core'] = array(
-      'title' => t('Multisite Status Server'),
+    $requirements['remote_site_status_server_core'] = array(
+      'title' => t('Remote Site Status Server'),
       'value' => BACKDROP_VERSION,
-      'description' => t('Multisite Status Server requires Backdrop core 1.28.0 or later (for the icon() API).'),
+      'description' => t('Remote Site Status Server requires Backdrop core 1.28.0 or later (for the icon() API).'),
       'severity' => REQUIREMENT_ERROR,
     );
   }
@@ -40,8 +40,19 @@ function acuity_multisite_status_server_requirements($phase) {
  * Removes module configuration. The status tables are dropped automatically by
  * the schema API; nothing here modifies any client site.
  */
-function acuity_multisite_status_server_uninstall() {
-  config('acuity_multisite_status_server.settings')->delete();
+function remote_site_status_server_uninstall() {
+  config('remote_site_status_server.settings')->delete();
+
+  // Delete any view configs this module shipped as defaults, including
+  // overridden copies saved to the live config directory by the operator.
+  $view_configs = array(
+    'views.view.remote_site_status_site_list',
+    'views.view.remote_site_status_site_projects',
+    'views.view.remote_site_status_sites_with_projects',
+  );
+  foreach ($view_configs as $config_name) {
+    config($config_name)->delete();
+  }
 }
 
 /**
@@ -54,8 +65,8 @@ function acuity_multisite_status_server_uninstall() {
  *   - site_project the join: which module/theme/layout is installed on which
  *                  site, at what version, linked to its project row.
  */
-function acuity_multisite_status_server_schema() {
-  $schema['acuity_multisite_status_site'] = array(
+function remote_site_status_server_schema() {
+  $schema['remote_site_status_site'] = array(
     'description' => 'Registered client sites reporting their status to this server.',
     'fields' => array(
       'id' => array(
@@ -138,7 +149,7 @@ function acuity_multisite_status_server_schema() {
     ),
   );
 
-  $schema['acuity_multisite_status_project'] = array(
+  $schema['remote_site_status_project'] = array(
     'description' => 'Distinct projects seen across the fleet, with the authoritative latest/security versions and the operator security-review layer.',
     'fields' => array(
       'id' => array(
@@ -213,7 +224,7 @@ function acuity_multisite_status_server_schema() {
     ),
   );
 
-  $schema['acuity_multisite_status_site_project'] = array(
+  $schema['remote_site_status_site_project'] = array(
     'description' => 'Join row: a specific module/theme/layout installed on a site, at a version, linked to its project.',
     'fields' => array(
       'id' => array(
@@ -221,13 +232,13 @@ function acuity_multisite_status_server_schema() {
         'not null' => TRUE,
       ),
       'site_id' => array(
-        'description' => 'References acuity_multisite_status_site.id.',
+        'description' => 'References remote_site_status_site.id.',
         'type' => 'int',
         'not null' => TRUE,
         'default' => 0,
       ),
       'project_id' => array(
-        'description' => 'References acuity_multisite_status_project.id. Carries the authoritative latest version.',
+        'description' => 'References remote_site_status_project.id. Carries the authoritative latest version.',
         'type' => 'int',
         'not null' => TRUE,
         'default' => 0,

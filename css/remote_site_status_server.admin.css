@@ -1,0 +1,71 @@
+/**
+ * @file
+ * Admin styling for Remote Site Status Server.
+ */
+
+/* Make the one-time new-key fieldset stand out. */
+.rstat-new-key {
+  border-color: #d4a017;
+  background-color: #fdf6e3;
+}
+
+/* Mute revoked sites in the registration list. */
+.rstat-sites-list tr.rstat-site-revoked {
+  opacity: 0.6;
+}
+
+/* Keep the key field and Copy button on one row. */
+.rstat-key-copy {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.rstat-key-copy .rstat-key-value {
+  flex: 1 1 auto;
+  max-width: 100%;
+  font-family: monospace;
+}
+
+/* Copy button: icon and label side by side. */
+.rstat-key-copy .rstat-copy-key {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+}
+
+.rstat-key-copy .rstat-copy-key svg,
+.rstat-key-copy .rstat-copy-key img {
+  width: 1em;
+  height: 1em;
+}
+
+/* Legend colour dots — used in view headers instead of emoji. */
+.rstat-dot {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 0.25em;
+}
+.rstat-dot-red  { background-color: #d93025; }
+.rstat-dot-blue { background-color: #1a73e8; }
+
+/* Project version shown red when it is itself a security release. */
+.rstat-security-release {
+  color: #d93025;
+  font-weight: bold;
+}
+
+/* Version highlighting in the modules view. */
+tr.rstat-outdated .rstat-version {
+  color: #1a73e8;
+  font-weight: bold;
+}
+
+tr.rstat-security-update .rstat-version {
+  color: #d93025;
+  font-weight: bold;
+}

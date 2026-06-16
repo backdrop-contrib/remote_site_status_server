@@ -2,85 +2,27 @@
 
 /**
  * @file
- * Admin UI for Multisite Status Server (Acuity): site registration and the
+ * Admin UI for Remote Site Status Server: site registration and the
  * key-issuance flow (generate + hash + show once, regenerate, revoke, delete).
  */
 
 /**
- * Page callback: list all registered sites with management actions.
+ * Page callback: module landing page showing the registered-sites View.
  *
- * This is the module landing page and the registration management surface:
- * add via the "Register a site" local action, then edit/revoke/delete here.
- * The analytical fleet dashboard (out-of-date, security, who-runs-project-X)
- * is a separate View the operator builds on the data exposed via Views; this
- * list intentionally stays a simple, dependency-free management table.
+ * The site list is rendered as an embedded View so the operator gets paging,
+ * sorting and filtering out of the box and can customise the display. Admin
+ * action links (Edit / Revoke / Delete) are fields in the View itself.
  *
  * @return string
- *   Rendered HTML: a table of registered sites, or an empty-state prompt.
+ *   Rendered HTML: last-fetch status line followed by the embedded View.
  */
-function acuity_multisite_status_server_sites_page() {
-  $header = array(
-    t('Label'),
-    t('URL'),
-    t('Status'),
-    t('Backdrop'),
-    t('PHP'),
-    t('Last cron'),
-    t('Last seen'),
-    t('Actions'),
-  );
-
-  $last_fetch = state_get('acuity_multisite_status_server_last_fetch', NULL);
+function remote_site_status_server_sites_page() {
+  $last_fetch = state_get('remote_site_status_server_last_fetch', NULL);
   $output = $last_fetch
-    ? '<p class="acuity-last-fetch">' . t('Project versions last checked <strong>@ago ago</strong>.', array('@ago' => format_interval(REQUEST_TIME - $last_fetch))) . '</p>'
-    : '<p class="acuity-last-fetch">' . t('Project versions have not been checked yet.') . '</p>';
+    ? '<p class="rstat-last-fetch">' . t('Project versions last checked <strong>@ago ago</strong>.', array('@ago' => format_interval(REQUEST_TIME - $last_fetch))) . '</p>'
+    : '<p class="rstat-last-fetch">' . t('Project versions have not been checked yet.') . '</p>';
 
-  $rows = array();
-  $sites = db_select('acuity_multisite_status_site', 's')
-    ->fields('s')
-    ->orderBy('s.label')
-    ->execute();
-
-  foreach ($sites as $site) {
-    $base = 'admin/config/acuity-multisite-status-server/sites/' . $site->id;
-    $revoked = ($site->status === 'revoked');
-
-    // The revoke route is a toggle; label it for the site's current state.
-    $actions = array(
-      l(t('Edit'), $base . '/edit'),
-      $revoked ? l(t('Reinstate'), $base . '/revoke') : l(t('Revoke'), $base . '/revoke'),
-      l(t('Delete'), $base . '/delete'),
-    );
-
-    $rows[] = array(
-      'data' => array(
-        check_plain($site->label),
-        $site->url ? l($site->url, $site->url, array('attributes' => array('target' => '_blank', 'rel' => 'noopener noreferrer'))) : t('—'),
-        $revoked ? t('Revoked') : t('Active'),
-        $site->backdrop_version ? check_plain($site->backdrop_version) : t('—'),
-        $site->php_version ? check_plain($site->php_version) : t('—'),
-        !empty($site->cron_last) ? format_date($site->cron_last, 'short') : t('Never'),
-        !empty($site->last_seen) ? format_date($site->last_seen, 'short') : t('Never'),
-        implode(' | ', $actions),
-      ),
-      // Visually distinguish revoked sites in the list.
-      'class' => $revoked ? array('acuity-site-revoked') : array(),
-    );
-  }
-
-  if (empty($rows)) {
-    $output .= '<p>' . t('No sites registered yet. <a href="@url">Register a site</a>.', array(
-      '@url' => url('admin/config/acuity-multisite-status-server/sites/add'),
-    )) . '</p>';
-    return $output;
-  }
-
-  $output .= theme('table', array(
-    'header' => $header,
-    'rows' => $rows,
-    'attributes' => array('class' => array('acuity-sites-list')),
-  ));
-
+  $output .= views_embed_view('remote_site_status_site_list');
   return $output;
 }
 
@@ -96,8 +38,8 @@ function acuity_multisite_status_server_sites_page() {
  * @return object
  *   The site row. Does not return if the site is missing (redirects instead).
  */
-function acuity_multisite_status_server_site_load_or_404($site_id) {
-  $site = db_select('acuity_multisite_status_site', 's')
+function remote_site_status_server_site_load_or_404($site_id) {
+  $site = db_select('remote_site_status_site', 's')
     ->fields('s')
     ->condition('id', $site_id)
     ->execute()
@@ -105,7 +47,7 @@ function acuity_multisite_status_server_site_load_or_404($site_id) {
 
   if (!$site) {
     backdrop_set_message(t('Site not found.'), 'error');
-    backdrop_goto('admin/config/acuity-multisite-status-server');
+    backdrop_goto('admin/config/remote-site-status-server');
   }
 
   return $site;
@@ -125,8 +67,8 @@ function acuity_multisite_status_server_site_load_or_404($site_id) {
  * @param string $key
  *   The plaintext API key.
  */
-function acuity_multisite_status_server_stash_new_key($site_id, $key) {
-  $_SESSION['acuity_multisite_status_server_new_key'] = array(
+function remote_site_status_server_stash_new_key($site_id, $key) {
+  $_SESSION['remote_site_status_server_new_key'] = array(
     'site_id' => (int) $site_id,
     'key' => $key,
   );
@@ -150,41 +92,41 @@ function acuity_multisite_status_server_stash_new_key($site_id, $key) {
  * @return array
  *   The form definition.
  */
-function acuity_multisite_status_server_site_form($form, &$form_state, $site_id = NULL) {
+function remote_site_status_server_site_form($form, &$form_state, $site_id = NULL) {
   $site = NULL;
   if (!empty($site_id)) {
-    $site = acuity_multisite_status_server_site_load_or_404($site_id);
+    $site = remote_site_status_server_site_load_or_404($site_id);
   }
 
   $form['#site_id'] = $site_id;
 
   // The show-once key message lands on this page after add/regenerate; load the
   // Copy-button behaviour and its styling here so they are present when it does.
-  $module_path = backdrop_get_path('module', 'acuity_multisite_status_server');
-  backdrop_add_css($module_path . '/css/acuity_multisite_status_server.admin.css');
-  backdrop_add_js($module_path . '/js/acuity_multisite_status_server.admin.js');
+  $module_path = backdrop_get_path('module', 'remote_site_status_server');
+  backdrop_add_css($module_path . '/css/remote_site_status_server.admin.css');
+  backdrop_add_js($module_path . '/js/remote_site_status_server.admin.js');
 
   // One-time display of a freshly generated key, stashed by the add/regenerate
   // flow to survive the redirect. Shown once, then cleared from the session.
-  if ($site && !empty($_SESSION['acuity_multisite_status_server_new_key'])
-      && $_SESSION['acuity_multisite_status_server_new_key']['site_id'] == $site_id) {
-    $new_key = $_SESSION['acuity_multisite_status_server_new_key']['key'];
-    unset($_SESSION['acuity_multisite_status_server_new_key']);
+  if ($site && !empty($_SESSION['remote_site_status_server_new_key'])
+      && $_SESSION['remote_site_status_server_new_key']['site_id'] == $site_id) {
+    $new_key = $_SESSION['remote_site_status_server_new_key']['key'];
+    unset($_SESSION['remote_site_status_server_new_key']);
 
     $form['new_key'] = array(
       '#type' => 'fieldset',
       '#title' => t('Site saved — copy your new API key'),
-      '#attributes' => array('class' => array('acuity-new-key')),
+      '#attributes' => array('class' => array('rstat-new-key')),
       '#weight' => -10,
     );
     $form['new_key']['key'] = array(
       '#type' => 'item',
       '#description' => t('Copy this key now and store it with the client site. It is shown only once and cannot be retrieved later.'),
-      '#markup' => '<div class="acuity-key-copy">'
-        . '<input type="text" class="acuity-key-value" value="' . check_plain($new_key) . '" readonly="readonly" size="64" />'
-        . '<button type="button" class="button acuity-copy-key">'
+      '#markup' => '<div class="rstat-key-copy">'
+        . '<input type="text" class="rstat-key-value" value="' . check_plain($new_key) . '" readonly="readonly" size="64" />'
+        . '<button type="button" class="button rstat-copy-key">'
         . icon('copy', array('alt' => t('Copy to clipboard')))
-        . '<span class="acuity-copy-label">' . t('Copy') . '</span>'
+        . '<span class="rstat-copy-label">' . t('Copy') . '</span>'
         . '</button>'
         . '</div>',
     );
@@ -221,12 +163,12 @@ function acuity_multisite_status_server_site_form($form, &$form_state, $site_id 
     $form['regenerate_key'] = array(
       '#type' => 'submit',
       '#value' => t('Regenerate key'),
-      '#submit' => array('acuity_multisite_status_server_site_regenerate_submit'),
+      '#submit' => array('remote_site_status_server_site_regenerate_submit'),
       '#limit_validation_errors' => array(),
       '#weight' => 1,
     );
 
-    $base = 'admin/config/acuity-multisite-status-server/sites/' . $site_id;
+    $base = 'admin/config/remote-site-status-server/sites/' . $site_id;
     $revoke_text = ($site->status === 'revoked') ? t('Reactivate this site') : t('Revoke this site');
     $form['actions_links'] = array(
       '#type' => 'item',
@@ -255,11 +197,11 @@ function acuity_multisite_status_server_site_form($form, &$form_state, $site_id 
  * @param array $form_state
  *   The form state array.
  */
-function acuity_multisite_status_server_site_form_validate($form, &$form_state) {
+function remote_site_status_server_site_form_validate($form, &$form_state) {
   $url = trim($form_state['values']['url']);
   $site_id = $form['#site_id'];
 
-  $query = db_select('acuity_multisite_status_site', 's')
+  $query = db_select('remote_site_status_site', 's')
     ->fields('s', array('id'))
     ->condition('url', $url);
   if (!empty($site_id)) {
@@ -285,7 +227,7 @@ function acuity_multisite_status_server_site_form_validate($form, &$form_state) 
  * @param array $form_state
  *   The form state array.
  */
-function acuity_multisite_status_server_site_form_submit($form, &$form_state) {
+function remote_site_status_server_site_form_submit($form, &$form_state) {
   $site_id = $form['#site_id'];
 
   $fields = array(
@@ -294,25 +236,25 @@ function acuity_multisite_status_server_site_form_submit($form, &$form_state) {
   );
 
   if ($site_id) {
-    db_update('acuity_multisite_status_site')
+    db_update('remote_site_status_site')
       ->fields($fields)
       ->condition('id', $site_id)
       ->execute();
     backdrop_set_message(t('Site updated.'));
     // Saving returns to the site list; only Regenerate key stays on the edit
     // form (so the freshly shown key is not immediately navigated away from).
-    $form_state['redirect'] = 'admin/config/acuity-multisite-status-server';
+    $form_state['redirect'] = 'admin/config/remote-site-status-server';
   }
   else {
-    $key = acuity_multisite_status_server_generate_key();
-    $fields['key_hash'] = acuity_multisite_status_server_hash_key($key);
+    $key = remote_site_status_server_generate_key();
+    $fields['key_hash'] = remote_site_status_server_hash_key($key);
     $fields['status'] = 'active';
-    $new_id = db_insert('acuity_multisite_status_site')
+    $new_id = db_insert('remote_site_status_site')
       ->fields($fields)
       ->execute();
     backdrop_set_message(t('Site registered.'));
-    acuity_multisite_status_server_stash_new_key($new_id, $key);
-    $form_state['redirect'] = 'admin/config/acuity-multisite-status-server/sites/' . $new_id . '/edit';
+    remote_site_status_server_stash_new_key($new_id, $key);
+    $form_state['redirect'] = 'admin/config/remote-site-status-server/sites/' . $new_id . '/edit';
   }
 }
 
@@ -327,18 +269,18 @@ function acuity_multisite_status_server_site_form_submit($form, &$form_state) {
  * @param array $form_state
  *   The form state array.
  */
-function acuity_multisite_status_server_site_regenerate_submit($form, &$form_state) {
+function remote_site_status_server_site_regenerate_submit($form, &$form_state) {
   $site_id = $form['#site_id'];
 
-  $key = acuity_multisite_status_server_generate_key();
-  db_update('acuity_multisite_status_site')
-    ->fields(array('key_hash' => acuity_multisite_status_server_hash_key($key)))
+  $key = remote_site_status_server_generate_key();
+  db_update('remote_site_status_site')
+    ->fields(array('key_hash' => remote_site_status_server_hash_key($key)))
     ->condition('id', $site_id)
     ->execute();
 
   backdrop_set_message(t('A new API key has been generated. The previous key no longer works.'));
-  acuity_multisite_status_server_stash_new_key($site_id, $key);
-  $form_state['redirect'] = 'admin/config/acuity-multisite-status-server/sites/' . $site_id . '/edit';
+  remote_site_status_server_stash_new_key($site_id, $key);
+  $form_state['redirect'] = 'admin/config/remote-site-status-server/sites/' . $site_id . '/edit';
 }
 
 /**
@@ -358,8 +300,8 @@ function acuity_multisite_status_server_site_regenerate_submit($form, &$form_sta
  * @return array
  *   The confirm form.
  */
-function acuity_multisite_status_server_site_revoke_form($form, &$form_state, $site_id) {
-  $site = acuity_multisite_status_server_site_load_or_404($site_id);
+function remote_site_status_server_site_revoke_form($form, &$form_state, $site_id) {
+  $site = remote_site_status_server_site_load_or_404($site_id);
   $form['#site_id'] = $site_id;
   $form['#reactivate'] = ($site->status === 'revoked');
 
@@ -377,7 +319,7 @@ function acuity_multisite_status_server_site_revoke_form($form, &$form_state, $s
   return confirm_form(
     $form,
     $question,
-    'admin/config/acuity-multisite-status-server',
+    'admin/config/remote-site-status-server',
     $description,
     $confirm,
     t('Cancel')
@@ -392,16 +334,16 @@ function acuity_multisite_status_server_site_revoke_form($form, &$form_state, $s
  * @param array $form_state
  *   The form state array.
  */
-function acuity_multisite_status_server_site_revoke_form_submit($form, &$form_state) {
+function remote_site_status_server_site_revoke_form_submit($form, &$form_state) {
   $new_status = !empty($form['#reactivate']) ? 'active' : 'revoked';
-  db_update('acuity_multisite_status_site')
+  db_update('remote_site_status_site')
     ->fields(array('status' => $new_status))
     ->condition('id', $form['#site_id'])
     ->execute();
 
   $message = ($new_status === 'active') ? t('Site reactivated.') : t('Site revoked.');
   backdrop_set_message($message);
-  $form_state['redirect'] = 'admin/config/acuity-multisite-status-server';
+  $form_state['redirect'] = 'admin/config/remote-site-status-server';
 }
 
 /**
@@ -417,14 +359,14 @@ function acuity_multisite_status_server_site_revoke_form_submit($form, &$form_st
  * @return array
  *   The confirm form.
  */
-function acuity_multisite_status_server_site_delete_form($form, &$form_state, $site_id) {
-  $site = acuity_multisite_status_server_site_load_or_404($site_id);
+function remote_site_status_server_site_delete_form($form, &$form_state, $site_id) {
+  $site = remote_site_status_server_site_load_or_404($site_id);
   $form['#site_id'] = $site_id;
 
   return confirm_form(
     $form,
     t('Are you sure you want to delete the site %label?', array('%label' => $site->label)),
-    'admin/config/acuity-multisite-status-server',
+    'admin/config/remote-site-status-server',
     t('This permanently removes the site and the versions it reported. This cannot be undone. To stop a site reporting while keeping its history, revoke it instead.'),
     t('Delete'),
     t('Cancel')
@@ -442,18 +384,18 @@ function acuity_multisite_status_server_site_delete_form($form, &$form_state, $s
  * @param array $form_state
  *   The form state array.
  */
-function acuity_multisite_status_server_site_delete_form_submit($form, &$form_state) {
+function remote_site_status_server_site_delete_form_submit($form, &$form_state) {
   $site_id = $form['#site_id'];
 
-  db_delete('acuity_multisite_status_site_project')
+  db_delete('remote_site_status_site_project')
     ->condition('site_id', $site_id)
     ->execute();
-  db_delete('acuity_multisite_status_site')
+  db_delete('remote_site_status_site')
     ->condition('id', $site_id)
     ->execute();
 
   backdrop_set_message(t('Site deleted.'));
-  $form_state['redirect'] = 'admin/config/acuity-multisite-status-server';
+  $form_state['redirect'] = 'admin/config/remote-site-status-server';
 }
 
 // =============================================================================
@@ -476,8 +418,8 @@ function acuity_multisite_status_server_site_delete_form_submit($form, &$form_st
  * @return array
  *   The form definition.
  */
-function acuity_multisite_status_server_settings_form($form, &$form_state) {
-  $config = config('acuity_multisite_status_server.settings');
+function remote_site_status_server_settings_form($form, &$form_state) {
+  $config = config('remote_site_status_server.settings');
 
   $form['security'] = array(
     '#type' => 'fieldset',
@@ -566,8 +508,8 @@ function acuity_multisite_status_server_settings_form($form, &$form_state) {
  * @param array $form_state
  *   The form state array.
  */
-function acuity_multisite_status_server_settings_form_submit($form, &$form_state) {
-  $config = config('acuity_multisite_status_server.settings');
+function remote_site_status_server_settings_form_submit($form, &$form_state) {
+  $config = config('remote_site_status_server.settings');
   $config->set('security_notes_stub', !empty($form_state['values']['security_notes_stub']));
   $config->set('security_notes_date_format', $form_state['values']['security_notes_date_format']);
   $config->set('stale_cron_days', (int) $form_state['values']['stale_cron_days']);
@@ -590,8 +532,8 @@ function acuity_multisite_status_server_settings_form_submit($form, &$form_state
  * @return object
  *   The project row. Does not return if missing (redirects instead).
  */
-function acuity_multisite_status_server_project_load_or_404($project_id) {
-  $project = db_select('acuity_multisite_status_project', 'p')
+function remote_site_status_server_project_load_or_404($project_id) {
+  $project = db_select('remote_site_status_project', 'p')
     ->fields('p')
     ->condition('id', $project_id)
     ->execute()
@@ -599,7 +541,7 @@ function acuity_multisite_status_server_project_load_or_404($project_id) {
 
   if (!$project) {
     backdrop_set_message(t('Project not found.'), 'error');
-    backdrop_goto('admin/config/acuity-multisite-status-server');
+    backdrop_goto('admin/config/remote-site-status-server');
   }
 
   return $project;
@@ -611,10 +553,10 @@ function acuity_multisite_status_server_project_load_or_404($project_id) {
  * Shows the project's current security state and allows the operator to edit
  * the security notes and optionally stamp the project as reviewed — which
  * sets security_reviewed_version to the current latest_security_version and
- * flips security_status to 'reviewed'. The next fetch will flip it back to
- * 'needs_review' only if a newer security version appears, keeping the
+ * flips security_status to 'Reviewed'. The next fetch will flip it back to
+ * 'Needs review' only if a newer security version appears, keeping the
  * reviewed/notes history intact. Accessible at
- * admin/config/acuity-multisite-status-server/projects/{id}/review.
+ * admin/config/remote-site-status-server/projects/{id}/review.
  *
  * @param array $form
  *   The form array.
@@ -626,8 +568,8 @@ function acuity_multisite_status_server_project_load_or_404($project_id) {
  * @return array
  *   The form definition.
  */
-function acuity_multisite_status_server_project_review_form($form, &$form_state, $project_id) {
-  $project = acuity_multisite_status_server_project_load_or_404($project_id);
+function remote_site_status_server_project_review_form($form, &$form_state, $project_id) {
+  $project = remote_site_status_server_project_load_or_404($project_id);
   $form['#project_id'] = $project_id;
 
   // Read-only project facts for context.
@@ -659,7 +601,7 @@ function acuity_multisite_status_server_project_review_form($form, &$form_state,
   }
 
   $status_map = array(
-    'needs_review' => t('Needs review'),
+    'Needs review' => t('Needs review'),
     'reviewed' => t('Reviewed'),
   );
   $status_label = !empty($project->security_status) ? ($status_map[$project->security_status] ?? check_plain($project->security_status)) : t('—');
@@ -693,7 +635,7 @@ function acuity_multisite_status_server_project_review_form($form, &$form_state,
     $form['mark_reviewed'] = array(
       '#type' => 'checkbox',
       '#title' => t('Mark as reviewed (stamp %version as the reviewed version)', array('%version' => $project->latest_security_version)),
-      '#default_value' => ($project->security_status === 'needs_review') ? 1 : 0,
+      '#default_value' => ($project->security_status === 'Needs review') ? 1 : 0,
     );
   }
 
@@ -702,7 +644,7 @@ function acuity_multisite_status_server_project_review_form($form, &$form_state,
     '#value' => t('Save'),
   );
 
-  $cancel_url = isset($_GET['destination']) ? $_GET['destination'] : 'admin/config/acuity-multisite-status-server';
+  $cancel_url = isset($_GET['destination']) ? $_GET['destination'] : 'admin/config/remote-site-status-server';
   $form['cancel'] = array(
     '#type' => 'markup',
     '#markup' => ' ' . l(t('Cancel'), $cancel_url),
@@ -723,7 +665,7 @@ function acuity_multisite_status_server_project_review_form($form, &$form_state,
  * @param array $form_state
  *   The form state array.
  */
-function acuity_multisite_status_server_project_review_form_submit($form, &$form_state) {
+function remote_site_status_server_project_review_form_submit($form, &$form_state) {
   $project_id = $form['#project_id'];
 
   $fields = array(
@@ -731,7 +673,7 @@ function acuity_multisite_status_server_project_review_form_submit($form, &$form
   );
 
   if (!empty($form_state['values']['mark_reviewed'])) {
-    $project = db_select('acuity_multisite_status_project', 'p')
+    $project = db_select('remote_site_status_project', 'p')
       ->fields('p', array('latest_security_version'))
       ->condition('id', $project_id)
       ->execute()
@@ -739,11 +681,11 @@ function acuity_multisite_status_server_project_review_form_submit($form, &$form
 
     if ($project && !empty($project->latest_security_version)) {
       $fields['security_reviewed_version'] = $project->latest_security_version;
-      $fields['security_status'] = 'reviewed';
+      $fields['security_status'] = 'Reviewed';
     }
   }
 
-  db_update('acuity_multisite_status_project')
+  db_update('remote_site_status_project')
     ->fields($fields)
     ->condition('id', $project_id)
     ->execute();

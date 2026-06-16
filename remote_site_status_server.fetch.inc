@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Authoritative latest-version check for Multisite Status Server (Acuity).
+ * Authoritative latest-version check for Remote Site Status Server.
  *
  * Walks the fleet's distinct project inventory, fetches each project's
  * release-history XML from the Backdrop update server, parses the latest
@@ -18,7 +18,28 @@
  * Mirrors UPDATE_DEFAULT_URL from the core Update module, defined here so
  * this file does not depend on that module being enabled.
  */
-define('ACUITY_MSS_UPDATE_BASE_URL', 'https://updates.backdropcms.org/release-history');
+define('REMOTE_SITE_STATUS_UPDATE_URL', 'https://updates.backdropcms.org/release-history');
+
+/**
+ * Page callback: Projects tab — fetch form followed by the projects list view.
+ *
+ * Renders the fetch-trigger form and the projects list view as separate
+ * siblings so the view's exposed filters have their own <form> element and do
+ * not accidentally submit the fetch form when the operator clicks Apply.
+ *
+ * @return array
+ *   A render array containing the fetch form and the embedded view.
+ */
+function remote_site_status_server_projects_page() {
+  $build['fetch_form'] = backdrop_get_form('remote_site_status_server_fetch_updates_form');
+  $view_output = views_embed_view('remote_site_status_projects_list');
+  if ($view_output !== NULL) {
+    $build['projects_list'] = array(
+      '#markup' => $view_output,
+    );
+  }
+  return $build;
+}
 
 /**
  * Page callback / form builder: manual latest-version fetch trigger.
@@ -26,7 +47,7 @@ define('ACUITY_MSS_UPDATE_BASE_URL', 'https://updates.backdropcms.org/release-hi
  * Displays the last-check timestamp (if any) and a button that starts a
  * batched fetch of the Backdrop release-history feed for every project in
  * the fleet inventory. Accessible at
- * admin/config/acuity-multisite-status-server/fetch-updates.
+ * admin/config/remote-site-status-server/projects.
  *
  * @param array $form
  *   The form array.
@@ -36,8 +57,8 @@ define('ACUITY_MSS_UPDATE_BASE_URL', 'https://updates.backdropcms.org/release-hi
  * @return array
  *   The form definition.
  */
-function acuity_multisite_status_server_fetch_updates_form($form, &$_form_state) {
-  $last_fetch = state_get('acuity_multisite_status_server_last_fetch', NULL);
+function remote_site_status_server_fetch_updates_form($form, &$_form_state) {
+  $last_fetch = state_get('remote_site_status_server_last_fetch', NULL);
 
   if ($last_fetch) {
     $form['last_checked'] = array(
@@ -54,7 +75,7 @@ function acuity_multisite_status_server_fetch_updates_form($form, &$_form_state)
     );
   }
 
-  $count = (int) db_select('acuity_multisite_status_project', 'p')
+  $count = (int) db_select('remote_site_status_project', 'p')
     ->countQuery()
     ->execute()
     ->fetchField();
@@ -65,6 +86,22 @@ function acuity_multisite_status_server_fetch_updates_form($form, &$_form_state)
       '#markup' => '<p>' . t('No projects are in the fleet inventory yet. Once client sites report in, their installed projects will appear here.') . '</p>',
     );
     return $form;
+  }
+
+  $unchecked = (int) db_select('remote_site_status_project', 'p')
+    ->isNull('p.latest_checked_at')
+    ->countQuery()
+    ->execute()
+    ->fetchField();
+
+  if ($unchecked > 0) {
+    $form['unchecked_notice'] = array(
+      '#type' => 'item',
+      '#markup' => '<div class="messages warning">' . format_plural($unchecked,
+        '1 project has been added to the inventory and has not yet been checked against the Backdrop release feed.',
+        '@count projects have been added to the inventory and have not yet been checked against the Backdrop release feed.'
+      ) . ' ' . t('Run <em>Fetch latest versions</em> below to retrieve their release data. Custom or private projects not listed on Backdrop.org will remain without version data after the check — this is expected.') . '</div>',
+    );
   }
 
   $form['description'] = array(
@@ -92,8 +129,8 @@ function acuity_multisite_status_server_fetch_updates_form($form, &$_form_state)
  * @param array $form_state
  *   The form state array.
  */
-function acuity_multisite_status_server_fetch_updates_form_submit($_form, &$form_state) {
-  $projects = db_select('acuity_multisite_status_project', 'p')
+function remote_site_status_server_fetch_updates_form_submit($_form, &$form_state) {
+  $projects = db_select('remote_site_status_project', 'p')
     ->fields('p', array('id', 'project', 'type'))
     ->orderBy('p.project')
     ->execute();
@@ -101,22 +138,22 @@ function acuity_multisite_status_server_fetch_updates_form_submit($_form, &$form
   $operations = array();
   foreach ($projects as $project) {
     $operations[] = array(
-      'acuity_multisite_status_server_fetch_batch_operation',
+      'remote_site_status_server_fetch_batch_operation',
       array($project->id, $project->project, $project->type),
     );
   }
 
   if (empty($operations)) {
     backdrop_set_message(t('No projects in the fleet inventory to check.'), 'warning');
-    $form_state['redirect'] = 'admin/config/acuity-multisite-status-server';
+    $form_state['redirect'] = 'admin/config/remote-site-status-server';
     return;
   }
 
   $batch = array(
     'title' => t('Fetching latest project versions'),
     'operations' => $operations,
-    'finished' => 'acuity_multisite_status_server_fetch_batch_finished',
-    'file' => backdrop_get_path('module', 'acuity_multisite_status_server') . '/acuity_multisite_status_server.fetch.inc',
+    'finished' => 'remote_site_status_server_fetch_batch_finished',
+    'file' => backdrop_get_path('module', 'remote_site_status_server') . '/remote_site_status_server.fetch.inc',
     'progress_message' => t('Checking @current of @total projects...'),
     'error_message' => t('An error occurred while fetching version data.'),
   );
@@ -124,7 +161,7 @@ function acuity_multisite_status_server_fetch_updates_form_submit($_form, &$form
   batch_set($batch);
   // After batch completion, return to the overview so the "last checked"
   // timestamp is visible.
-  $form_state['redirect'] = 'admin/config/acuity-multisite-status-server';
+  $form_state['redirect'] = 'admin/config/remote-site-status-server';
 }
 
 /**
@@ -140,7 +177,7 @@ function acuity_multisite_status_server_fetch_updates_form_submit($_form, &$form
  * are shown inventory-only and never falsely flagged out of date.
  *
  * @param int $project_id
- *   The acuity_multisite_status_project row id.
+ *   The remote_site_status_project row id.
  * @param string $project
  *   The project machine name.
  * @param string $type
@@ -148,7 +185,7 @@ function acuity_multisite_status_server_fetch_updates_form_submit($_form, &$form
  * @param array $context
  *   Batch API context array (passed by reference).
  */
-function acuity_multisite_status_server_fetch_batch_operation($project_id, $project, $type, &$context) {
+function remote_site_status_server_fetch_batch_operation($project_id, $project, $type, &$context) {
   $context['message'] = t('Fetching release data for @project (@type)...', array(
     '@project' => $project,
     '@type' => $type,
@@ -159,7 +196,7 @@ function acuity_multisite_status_server_fetch_batch_operation($project_id, $proj
     $context['results']['no_upstream'] = 0;
   }
 
-  $releases = acuity_multisite_status_server_fetch_project_releases($project);
+  $releases = remote_site_status_server_fetch_project_releases($project);
 
   // Always record that we attempted a check for this project.
   $fields = array('latest_checked_at' => time());
@@ -179,7 +216,7 @@ function acuity_multisite_status_server_fetch_batch_operation($project_id, $proj
     // If the security release is the latest (or newer than latest), we use the
     // operator-review flow: needs_review until the operator marks it reviewed.
     if (!empty($releases['latest_security_version'])) {
-      $existing = db_select('acuity_multisite_status_project', 'p')
+      $existing = db_select('remote_site_status_project', 'p')
         ->fields('p', array('security_reviewed_version', 'security_notes'))
         ->condition('id', $project_id)
         ->execute()
@@ -189,12 +226,12 @@ function acuity_multisite_status_server_fetch_batch_operation($project_id, $proj
       $latest_ver = $releases['latest_version'];
 
       $sec_superseded = !empty($latest_ver) &&
-        acuity_multisite_status_server_compare_versions($security_ver, $latest_ver) < 0;
+        remote_site_status_server_compare_versions($security_ver, $latest_ver) < 0;
 
       if ($sec_superseded) {
         // Security fix is baked into a newer stable release. Flag only if the
         // fleet has sites still running a vulnerable version.
-        $installed = db_select('acuity_multisite_status_site_project', 'sp')
+        $installed = db_select('remote_site_status_site_project', 'sp')
           ->fields('sp', array('installed_version'))
           ->condition('project_id', $project_id)
           ->isNotNull('installed_version')
@@ -203,23 +240,23 @@ function acuity_multisite_status_server_fetch_batch_operation($project_id, $proj
 
         $vulnerable = FALSE;
         foreach ($installed as $v) {
-          if (acuity_multisite_status_server_compare_versions($v, $security_ver) < 0) {
+          if (remote_site_status_server_compare_versions($v, $security_ver) < 0) {
             $vulnerable = TRUE;
             break;
           }
         }
-        $fields['security_status'] = $vulnerable ? 'needs_review' : NULL;
+        $fields['security_status'] = $vulnerable ? 'Needs review' : NULL;
       }
       else {
         // Security release is at or beyond the latest stable — operator must
         // review and acknowledge.
         $reviewed = $existing ? $existing->security_reviewed_version : NULL;
 
-        if (empty($reviewed) || acuity_multisite_status_server_compare_versions($security_ver, $reviewed) > 0) {
-          $fields['security_status'] = 'needs_review';
+        if (empty($reviewed) || remote_site_status_server_compare_versions($security_ver, $reviewed) > 0) {
+          $fields['security_status'] = 'Needs review';
 
           // Prepend a dated stub to security_notes when the toggle is on.
-          $settings = config('acuity_multisite_status_server.settings');
+          $settings = config('remote_site_status_server.settings');
           if ($settings->get('security_notes_stub')) {
             $date_format = $settings->get('security_notes_date_format') ?: 'short';
             $stub = format_date(time(), $date_format) . ' - ' . $security_ver . ' - ';
@@ -228,7 +265,7 @@ function acuity_multisite_status_server_fetch_batch_operation($project_id, $proj
           }
         }
         else {
-          $fields['security_status'] = 'reviewed';
+          $fields['security_status'] = 'Reviewed';
         }
       }
     }
@@ -245,7 +282,7 @@ function acuity_multisite_status_server_fetch_batch_operation($project_id, $proj
     $context['results']['no_upstream']++;
   }
 
-  db_update('acuity_multisite_status_project')
+  db_update('remote_site_status_project')
     ->fields($fields)
     ->condition('id', $project_id)
     ->execute();
@@ -261,7 +298,7 @@ function acuity_multisite_status_server_fetch_batch_operation($project_id, $proj
  * @param array $_operations
  *   Remaining operations if $success is FALSE (unused on success path).
  */
-function acuity_multisite_status_server_fetch_batch_finished($success, $results, $_operations) {
+function remote_site_status_server_fetch_batch_finished($success, $results, $_operations) {
   if ($success) {
     $updated = $results['updated'] ?? 0;
     $no_upstream = $results['no_upstream'] ?? 0;
@@ -272,7 +309,7 @@ function acuity_multisite_status_server_fetch_batch_finished($success, $results,
     )));
 
     // Record the global last-fetch time so the admin page can show it.
-    state_set('acuity_multisite_status_server_last_fetch', time());
+    state_set('remote_site_status_server_last_fetch', time());
   }
   else {
     backdrop_set_message(t('An error occurred while fetching version data. Partial results may have been saved.'), 'error');
@@ -294,14 +331,14 @@ function acuity_multisite_status_server_fetch_batch_finished($success, $results,
  *   Associative array with keys 'latest_version' and 'latest_security_version'
  *   (either may be NULL if no matching release exists), or FALSE on failure.
  */
-function acuity_multisite_status_server_fetch_project_releases($project) {
-  $url = ACUITY_MSS_UPDATE_BASE_URL . '/' . rawurlencode($project) . '/' . BACKDROP_CORE_COMPATIBILITY;
+function remote_site_status_server_fetch_project_releases($project) {
+  $url = REMOTE_SITE_STATUS_UPDATE_URL . '/' . rawurlencode($project) . '/' . BACKDROP_CORE_COMPATIBILITY;
 
   $response = backdrop_http_request($url, array('timeout' => 20));
   $code = isset($response->code) ? (int) $response->code : 0;
 
   if (isset($response->error)) {
-    watchdog('acuity_multisite_status_server', 'Failed to fetch release history for @project: @error', array(
+    watchdog('remote_site_status_server', 'Failed to fetch release history for @project: @error', array(
       '@project' => $project,
       '@error' => $response->error,
     ), WATCHDOG_WARNING);
@@ -314,7 +351,7 @@ function acuity_multisite_status_server_fetch_project_releases($project) {
     return FALSE;
   }
 
-  $data = acuity_multisite_status_server_parse_release_xml($response->data);
+  $data = remote_site_status_server_parse_release_xml($response->data);
 
   if (!$data || empty($data['releases'])) {
     return FALSE;
@@ -380,7 +417,7 @@ function acuity_multisite_status_server_fetch_project_releases($project) {
  * @return array|null
  *   Parsed release data, or NULL if the XML is invalid or incomplete.
  */
-function acuity_multisite_status_server_parse_release_xml($raw_xml) {
+function remote_site_status_server_parse_release_xml($raw_xml) {
   try {
     $xml = new SimpleXMLElement($raw_xml);
   }
@@ -443,7 +480,7 @@ function acuity_multisite_status_server_parse_release_xml($raw_xml) {
  * @return int
  *   -1 if $a < $b, 0 if equal, 1 if $a > $b.
  */
-function acuity_multisite_status_server_compare_versions($a, $b) {
+function remote_site_status_server_compare_versions($a, $b) {
   $clean_a = preg_replace('/^\d+\.x-/', '', (string) $a);
   $clean_b = preg_replace('/^\d+\.x-/', '', (string) $b);
   return version_compare($clean_a, $clean_b);

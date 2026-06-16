@@ -1,10 +1,10 @@
-# Multisite Status Server (Acuity)
+# Remote Site Status Server
 
 ==================================================
 IGNORED PATHS (do not read, analyse, or scan)
 ==================================================
 
-- modules/acuity_multisite_status_server/docs/**
+- modules/remote_site_status_server/docs/**
 
 These are third-party libraries and generated documentation.
 Do not read, scan, or suggest changes to files under these paths.
@@ -17,14 +17,14 @@ RELATED MODULES & REFERENCES
 
 This is the SERVER half of a client/server pair. Read these for context:
 
-- **Client half** — `/modules/acuity_multisite_status_client` (see its CLAUDE.md).
+- **Client half** — `/modules/remote_site_status_client` (see its CLAUDE.md).
   The client sends the reports this server ingests. This server DEFINES the
   request/response schema and the key/auth model; keep the two in step.
 - **Pattern reference** — `/modules/webform_guard_server` (see its CLAUDE.md).
   A proven, shipped server module. **Reuse its patterns** for site registration,
   per-site key generation, Bearer auth, and the versioned `/api/v1/` endpoints — as
   COPIED-AND-ADAPTED code, NOT a shared library.
-- **Design of record** — `acuity_multisite_status_build_brief.md` (full pair spec).
+- **Design of record** — `remote_site_status_build_brief.md` (full pair spec).
 
 Other CLAUDE.md files exist in sibling module folders; treat each as authoritative
 for its own module.
@@ -34,7 +34,7 @@ for its own module.
 ROLE
 ==================================================
 
-You are a Senior Co-Developer and Security Advisor for the Acuity Multisite Status
+You are a Senior Co-Developer and Security Advisor for the Remote Site Status
 server Backdrop CMS module.
 
 Your responsibilities:
@@ -68,8 +68,8 @@ PHP Standards:
 
 Config:
 - Use .info files with: backdrop = 1.x (NOT core = 7.x)
-- Settings live in: acuity_multisite_status_server.settings
-  (config/acuity_multisite_status_server.settings.json)
+- Settings live in: remote_site_status_server.settings
+  (config/remote_site_status_server.settings.json)
 
 Routing:
 - Use backdrop_deliver_page() where appropriate
@@ -84,23 +84,21 @@ Scope Control:
 PROJECT OVERVIEW
 ==================================================
 
-`acuity_multisite_status_server` is the central site. It registers managed sites,
-issues per-site keys, ingests status reports from `acuity_multisite_status_client`
+`remote_site_status_server` is the central site. It registers managed sites,
+issues per-site keys, ingests status reports from `remote_site_status_client`
 installs, fetches authoritative latest versions on demand, and provides a
 Views-based dashboard so the operator can monitor the whole fleet from one place.
-Standalone Acuity-family utility (include the standard Acuity disclaimer in the
-README).
 
 ## Key responsibilities
 - **Registration (admin UI, not an API):** an add/edit form to register a site;
   generate a per-site key, store it HASHED, show plaintext ONCE; support
   revoke/reactivate and regenerate. Build the form, its save logic and menu routes —
   but NOT the site listing (that is a View the operator builds).
-- `POST /api/v1/acuity-multisite-status/report` — authenticate by key (hash + look up site; reject
+- `POST /api/v1/remote-site-status/report` — authenticate by key (hash + look up site; reject
   unknown/revoked), attribute the report to the KEY's site, upsert the site row,
   ensure project rows, replace that site's installed-version rows. INERT response.
   Payload size cap + rate limit.
-- `GET /api/v1/acuity-multisite-status/status` — health/connection test; returns server version. Inert.
+- `GET /api/v1/remote-site-status/status` — health/connection test; returns server version. Inert.
 - **Authoritative latest-version check — MANUAL only** (a "Get latest versions"
   button; no scheduled cron): for each distinct project, fetch its release-history
   feed from the Backdrop update server (reuse Update Manager's lower fetch/parse
@@ -140,40 +138,40 @@ Slice 1 — schema + registration + key issuance:
   data model). key_hash uniquely indexed for fast auth lookup.
 - hook_requirements(): blocks install on Backdrop core < 1.28.0 (icon() API).
   Backdrop has no minimum-core-version .info directive, so it is enforced here.
-- hook_permission(): dedicated 'administer acuity multisite status'.
+- hook_permission(): dedicated 'administer Remote Site Status'.
 - Site add/edit form with show-once key issuance: a 64-char hex key is minted,
   stored SHA-256-hashed (key the identity), and shown once on the edit form
   (stashed in session across the redirect, with a clipboard Copy button using
   the core icon() API). Regenerate key; revoke/reactivate (one toggle route);
   delete (removes site + its site_project rows, keeps fleet-wide project rows).
-- Coded site list at the module landing page (admin/config/acuity-multisite-
+- Coded site list at the module landing page (admin/config/remote-site-
   status-server) — Label/URL/Status/versions/cron/last-seen + Edit, conditional
   Revoke|Reinstate, Delete. No Views dependency. "Register a site" local action.
 - Save/revoke/reinstate/delete redirect back to the list; Regenerate stays on
   the edit form so the new key remains visible.
 
 Slice 2 — ingest + status API (tested live on bertie.test):
-- POST api/v1/acuity-multisite-status/report: Bearer auth (SHA-256 -> key_hash;
+- POST api/v1/remote-site-status/report: Bearer auth (SHA-256 -> key_hash;
   rejects unknown AND revoked), core flood rate limit (30/hr/site -> 429),
   256 KB payload cap (-> 413), invalid JSON -> 400, non-POST -> 405. Ingest in a
   transaction: upsert site facts + last_seen, ensure project rows (project+type),
   wholesale-replace site_project rows. Inert {"status":"received"}.
-- GET api/v1/acuity-multisite-status/status: authenticates, returns server
+- GET api/v1/remote-site-status/status: authenticates, returns server
   version (system_get_info) + recognised site label. Inert.
 - Helpers: json_response(), authorize_request(), ingest_report(),
   ensure_project(), generate_key(), hash_key().
 
 Slice 3 — authoritative latest-version check:
-- acuity_multisite_status_server.fetch.inc added with all fetch/parse/batch
+- remote_site_status_server.fetch.inc added with all fetch/parse/batch
   logic. No dependency on the Update Manager module being enabled.
-- acuity_multisite_status_server_fetch_project_releases(): fetches one
+- remote_site_status_server_fetch_project_releases(): fetches one
   project's release-history XML from the Backdrop update server
   (https://updates.backdropcms.org/release-history/{project}/1.x),
   returns latest stable (no version_extra) and latest security
   ('Security update' term) version strings, or FALSE for no-upstream projects.
-- acuity_multisite_status_server_parse_release_xml(): adapted from core's
+- remote_site_status_server_parse_release_xml(): adapted from core's
   update_parse_xml() — same structure, independent of update module.
-- acuity_multisite_status_server_compare_versions(): strips the core-compat
+- remote_site_status_server_compare_versions(): strips the core-compat
   prefix (1.x-) then delegates to PHP version_compare(). Load-bearing for
   picking latest from a feed and for the security_status flip.
 - Batch: one operation per project, ordered alphabetically. 20 s HTTP timeout
@@ -183,7 +181,7 @@ Slice 3 — authoritative latest-version check:
   latest_security_version > security_reviewed_version, else reviewed, else
   NULL (no security releases). Notes-stub prepend is a @todo pending the
   settings page (slice: server settings).
-- state_set('acuity_multisite_status_server_last_fetch') records the batch
+- state_set('remote_site_status_server_last_fetch') records the batch
   completion time; shown on the admin overview as "last checked N ago".
 - MENU_LOCAL_ACTION at .../fetch-updates — appears as a button on the main
   admin page alongside "Register a site".
@@ -213,15 +211,32 @@ verified end-to-end on bertie.test. Tables hold real data. Slice 3 populates
 project.latest_version / latest_security_version / security_status on demand.
 Settings page at .../settings tab; project security review at .../projects/%/review.
 
-Project security review form UX improved: redirect after save removed (form
-reloads in place); Cancel link added with ?destination support so Views links
-can return the operator to their view after saving.
+Views are shipped as JSON in config/ (Backdrop CMI). Three views provided:
+  - remote_site_status_site_list — registered sites list
+    (admin/config/remote-site-status/sites-list)
+  - remote_site_status_site_projects — per-site projects drill-down
+    (admin/remote-site-status/%)
+  - remote_site_status_sites_with_projects — per-project sites drill-down
+    (admin/config/remote-site-status/sites-with-projects/%) — NEEDS REBUILD
+    (file was overwritten with site_list content; must be recreated in UI
+    and re-exported)
+
+JS version highlighting (rstat- prefix) wired via hook_views_pre_render for
+both the site_projects and sites_with_projects views. Dev version strings
+("2.x-dev") are excluded from comparisons. Row highlighting colours the
+installed_version span text: blue = update available, red = security release.
+
+"module": "remote_site_status_server" field added to all view JSON files so
+Backdrop's Views UI shows them as "Default (module-provided)".
+
+hook_views_api() path updated to /views subfolder; views.inc moved there.
+hook_views_default_views() removed — not needed; config/ import handles install.
+hook_uninstall() deletes all three view configs on uninstall.
 
 Not yet built:
-- The version-aware Views filter handlers (installed < latest, and the
-  unreviewed-security condition) — see the @todo in views.inc.
-- Views export: hook_views_default_views() — operator to finalise views first,
-  then export and pack into the module.
+- remote_site_status_sites_with_projects view — needs recreating in the UI
+  and exporting to config/.
+- Version-aware Views filter handlers (installed < latest) — @todo in views.inc.
 - Pre-release security audit before first GitHub push.
 
 
@@ -229,22 +244,22 @@ Not yet built:
 KEY FILES
 ==================================================
 
-- acuity_multisite_status_server.module — /api/v1/acuity-multisite-status/report
-  and /api/v1/acuity-multisite-status/status handlers, key auth, ingest, key
+- remote_site_status_server.module — /api/v1/remote-site-status/report
+  and /api/v1/remote-site-status/status handlers, key auth, ingest, key
   helpers, hook_menu/permission/config_info/views_api. (latest-version trigger
   still to come in slice 3.)
-- acuity_multisite_status_server.admin.inc — site list page, site add/edit form
+- remote_site_status_server.admin.inc — site list page, site add/edit form
   + key issuance/show-once, regenerate, revoke/reactivate, delete. (settings
   form still to come.)
-- acuity_multisite_status_server.install — hook_schema() for site / project /
+- remote_site_status_server.install — hook_schema() for site / project /
   site_project; hook_requirements() (core >= 1.28.0); hook_uninstall().
-- acuity_multisite_status_server.views.inc — hook_views_data() (fields,
+- remote_site_status_server.views.inc — hook_views_data() (fields,
   site→site_project→project relationships; version-aware filter handlers TODO).
-- acuity_multisite_status_server.fetch.inc — manual latest-version batch
+- remote_site_status_server.fetch.inc — manual latest-version batch
   (fetch_updates_form, batch_operation, fetch_project_releases, parse_release_xml,
   compare_versions). Notes-stub prepend wired; reads settings at batch time.
-- js/acuity_multisite_status_server.admin.js, css/...admin.css — Copy-key button.
-- config/acuity_multisite_status_server.settings.json — default config (stub
+- js/remote_site_status_server.admin.js, css/...admin.css — Copy-key button.
+- config/remote_site_status_server.settings.json — default config (stub
   toggle on, date format 'short', stale 7 days, quiet 30 days).
 
 
@@ -264,22 +279,27 @@ Before closing each session, always:
 PLANNED / NEXT
 ==================================================
 
-See the build order in acuity_multisite_status_build_brief.md. Next up:
+Next up:
 
-- Version-aware Views filter handlers: "installed < latest" and unreviewed-
-  security condition filters that compare across the install→project join using
-  acuity_multisite_status_server_compare_versions(). Marked @todo in views.inc.
-- Client module: status gathering, settings form + test-connection, cron
-  fire-and-forget reporting. Server defines the contract; keep client in step.
+- **IMMEDIATE**: Rebuild remote_site_status_sites_with_projects view in UI
+  (per-project sites drill-down; base table: remote_site_status_project;
+  contextual arg: project id; relationships: project → site_project → site;
+  page path: admin/config/remote-site-status/sites-with-projects/%;
+  header: project details + legend; table: site name + installed_version with
+  rstat-version span). Export and save to config/ with "module" field added.
+- Version-aware Views filter handlers: "installed < latest" condition filter
+  that compares across the install→project join using
+  remote_site_status_server_compare_versions(). Marked @todo in views.inc.
+- Client module: test install, verify settings form + test-connection, cron
+  reporting against the server. Client module implementation is complete but
+  untested end-to-end.
 
 Then hardening (slice 7) and CHANGELOG/version for the first GitHub release.
 
 Potential future features:
-- Review link page-position preservation: a small JS behaviour in admin JS that
-  reads ?page=N from the current URL and appends it (URL-encoded) to any
-  destination= parameter on review links, so the operator returns to the correct
-  page of the view after saving. Only fires when ?page= is present (page 1 needs
-  no change). See Backdrop.behaviors.acuityReviewDestination sketch in session notes.
+- Review link page-position preservation: JS behaviour that reads ?page=N from
+  the current URL and appends it to destination= on review links so the operator
+  returns to the correct page after saving.
 
 
 ==================================================
@@ -325,7 +345,7 @@ IMPLEMENTATION NOTES
 - Mirror /modules/webform_guard_server's registration, key-issuance, auth and
   /api/v1/ endpoint patterns as COPIED-AND-ADAPTED code — NOT a shared library.
 - Use a consistent request/response schema so the same clients work with local and
-  hosted servers; keep it in step with /modules/acuity_multisite_status_client.
+  hosted servers; keep it in step with /modules/remote_site_status_client.
 - Responsible-maintainer defaults (ships to contrib; the aggregated data is an
   attack map of the operator's estate): HTTPS expected, dashboard behind a proper
   Backdrop permission (never public), payload cap + rate limit on ingest, inert
