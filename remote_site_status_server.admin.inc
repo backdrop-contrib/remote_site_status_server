@@ -18,9 +18,18 @@
  */
 function remote_site_status_server_sites_page() {
   $last_fetch = state_get('remote_site_status_server_last_fetch', NULL);
-  $output = $last_fetch
-    ? '<p class="rstat-last-fetch">' . t('Project versions last checked <strong>@ago ago</strong>.', array('@ago' => format_interval(REQUEST_TIME - $last_fetch))) . '</p>'
-    : '<p class="rstat-last-fetch">' . t('Project versions have not been checked yet.') . '</p>';
+  if ($last_fetch) {
+    $ago = format_interval(REQUEST_TIME - $last_fetch);
+    $output = '<p class="rstat-last-fetch">'
+      . t('Project versions last checked <strong>@ago ago</strong>.',
+        array('@ago' => $ago))
+      . '</p>';
+  }
+  else {
+    $output = '<p class="rstat-last-fetch">'
+      . t('Project versions have not been checked yet.')
+      . '</p>';
+  }
 
   $output .= views_embed_view('remote_site_status_site_list');
   return $output;
@@ -92,7 +101,8 @@ function remote_site_status_server_stash_new_key($site_id, $key) {
  * @return array
  *   The form definition.
  */
-function remote_site_status_server_site_form($form, &$form_state, $site_id = NULL) {
+function remote_site_status_server_site_form($form, &$form_state,
+    $site_id = NULL) {
   $site = NULL;
   if (!empty($site_id)) {
     $site = remote_site_status_server_site_load_or_404($site_id);
@@ -101,16 +111,16 @@ function remote_site_status_server_site_form($form, &$form_state, $site_id = NUL
   $form['#site_id'] = $site_id;
 
   // The show-once key message lands on this page after add/regenerate; load the
-  // Copy-button behaviour and its styling here so they are present when it does.
+  // Copy-button behaviour and its styling here so they are present.
   $module_path = backdrop_get_path('module', 'remote_site_status_server');
   backdrop_add_css($module_path . '/css/remote_site_status_server.admin.css');
   backdrop_add_js($module_path . '/js/remote_site_status_server.admin.js');
 
   // One-time display of a freshly generated key, stashed by the add/regenerate
   // flow to survive the redirect. Shown once, then cleared from the session.
-  if ($site && !empty($_SESSION['remote_site_status_server_new_key'])
-      && $_SESSION['remote_site_status_server_new_key']['site_id'] == $site_id) {
-    $new_key = $_SESSION['remote_site_status_server_new_key']['key'];
+  $session_key = $_SESSION['remote_site_status_server_new_key'] ?? NULL;
+  if ($site && $session_key && $session_key['site_id'] == $site_id) {
+    $new_key = $session_key['key'];
     unset($_SESSION['remote_site_status_server_new_key']);
 
     $form['new_key'] = array(
@@ -123,7 +133,8 @@ function remote_site_status_server_site_form($form, &$form_state, $site_id = NUL
       '#type' => 'item',
       '#description' => t('Copy this key now and store it with the client site. It is shown only once and cannot be retrieved later.'),
       '#markup' => '<div class="rstat-key-copy">'
-        . '<input type="text" class="rstat-key-value" value="' . check_plain($new_key) . '" readonly="readonly" size="64" />'
+        . '<input type="text" class="rstat-key-value" value="'
+        . check_plain($new_key) . '" readonly="readonly" size="64" />'
         . '<button type="button" class="button rstat-copy-key">'
         . icon('copy', array('alt' => t('Copy to clipboard')))
         . '<span class="rstat-copy-label">' . t('Copy') . '</span>'
@@ -169,10 +180,13 @@ function remote_site_status_server_site_form($form, &$form_state, $site_id = NUL
     );
 
     $base = 'admin/config/remote-site-status-server/sites/' . $site_id;
-    $revoke_text = ($site->status === 'revoked') ? t('Reactivate this site') : t('Revoke this site');
+    $revoke_text = ($site->status === 'revoked')
+      ? t('Reactivate this site') : t('Revoke this site');
     $form['actions_links'] = array(
       '#type' => 'item',
-      '#markup' => l($revoke_text, $base . '/revoke') . ' &nbsp;|&nbsp; ' . l(t('Delete this site'), $base . '/delete'),
+      '#markup' => l($revoke_text, $base . '/revoke')
+        . ' &nbsp;|&nbsp; '
+        . l(t('Delete this site'), $base . '/delete'),
       '#weight' => 20,
     );
   }
@@ -254,7 +268,8 @@ function remote_site_status_server_site_form_submit($form, &$form_state) {
       ->execute();
     backdrop_set_message(t('Site registered.'));
     remote_site_status_server_stash_new_key($new_id, $key);
-    $form_state['redirect'] = 'admin/config/remote-site-status-server/sites/' . $new_id . '/edit';
+    $form_state['redirect'] = 'admin/config/remote-site-status-server/sites/'
+      . $new_id . '/edit';
   }
 }
 
@@ -280,7 +295,8 @@ function remote_site_status_server_site_regenerate_submit($form, &$form_state) {
 
   backdrop_set_message(t('A new API key has been generated. The previous key no longer works.'));
   remote_site_status_server_stash_new_key($site_id, $key);
-  $form_state['redirect'] = 'admin/config/remote-site-status-server/sites/' . $site_id . '/edit';
+  $form_state['redirect'] = 'admin/config/remote-site-status-server/sites/'
+    . $site_id . '/edit';
 }
 
 /**
@@ -300,7 +316,8 @@ function remote_site_status_server_site_regenerate_submit($form, &$form_state) {
  * @return array
  *   The confirm form.
  */
-function remote_site_status_server_site_revoke_form($form, &$form_state, $site_id) {
+function remote_site_status_server_site_revoke_form($form, &$form_state,
+    $site_id) {
   $site = remote_site_status_server_site_load_or_404($site_id);
   $form['#site_id'] = $site_id;
   $form['#reactivate'] = ($site->status === 'revoked');
@@ -334,14 +351,16 @@ function remote_site_status_server_site_revoke_form($form, &$form_state, $site_i
  * @param array $form_state
  *   The form state array.
  */
-function remote_site_status_server_site_revoke_form_submit($form, &$form_state) {
+function remote_site_status_server_site_revoke_form_submit($form,
+    &$form_state) {
   $new_status = !empty($form['#reactivate']) ? 'active' : 'revoked';
   db_update('remote_site_status_site')
     ->fields(array('status' => $new_status))
     ->condition('id', $form['#site_id'])
     ->execute();
 
-  $message = ($new_status === 'active') ? t('Site reactivated.') : t('Site revoked.');
+  $message = ($new_status === 'active')
+    ? t('Site reactivated.') : t('Site revoked.');
   backdrop_set_message($message);
   $form_state['redirect'] = 'admin/config/remote-site-status-server';
 }
@@ -359,7 +378,8 @@ function remote_site_status_server_site_revoke_form_submit($form, &$form_state) 
  * @return array
  *   The confirm form.
  */
-function remote_site_status_server_site_delete_form($form, &$form_state, $site_id) {
+function remote_site_status_server_site_delete_form($form, &$form_state,
+    $site_id) {
   $site = remote_site_status_server_site_load_or_404($site_id);
   $form['#site_id'] = $site_id;
 
@@ -384,7 +404,8 @@ function remote_site_status_server_site_delete_form($form, &$form_state, $site_i
  * @param array $form_state
  *   The form state array.
  */
-function remote_site_status_server_site_delete_form_submit($form, &$form_state) {
+function remote_site_status_server_site_delete_form_submit($form,
+    &$form_state) {
   $site_id = $form['#site_id'];
 
   db_delete('remote_site_status_site_project')
@@ -443,8 +464,10 @@ function remote_site_status_server_settings_form($form, &$form_state) {
     if (!empty($format['hidden'])) {
       continue;
     }
-    $label = !empty($format['label']) ? check_plain($format['label']) : check_plain($machine_name);
-    $pattern = !empty($format['pattern']) ? ' (' . check_plain($format['pattern']) . ')' : '';
+    $label = !empty($format['label'])
+      ? check_plain($format['label']) : check_plain($machine_name);
+    $pattern = !empty($format['pattern'])
+      ? ' (' . check_plain($format['pattern']) . ')' : '';
     $date_options[$machine_name] = $label . $pattern;
   }
 
@@ -510,10 +533,14 @@ function remote_site_status_server_settings_form($form, &$form_state) {
  */
 function remote_site_status_server_settings_form_submit($form, &$form_state) {
   $config = config('remote_site_status_server.settings');
-  $config->set('security_notes_stub', !empty($form_state['values']['security_notes_stub']));
-  $config->set('security_notes_date_format', $form_state['values']['security_notes_date_format']);
-  $config->set('stale_cron_days', (int) $form_state['values']['stale_cron_days']);
-  $config->set('quiet_site_days', (int) $form_state['values']['quiet_site_days']);
+  $stub = !empty($form_state['values']['security_notes_stub']);
+  $date_fmt = $form_state['values']['security_notes_date_format'];
+  $config->set('security_notes_stub', $stub);
+  $config->set('security_notes_date_format', $date_fmt);
+  $config->set('stale_cron_days',
+    (int) $form_state['values']['stale_cron_days']);
+  $config->set('quiet_site_days',
+    (int) $form_state['values']['quiet_site_days']);
   $config->save();
 
   backdrop_set_message(t('Settings saved.'));
@@ -568,7 +595,8 @@ function remote_site_status_server_project_load_or_404($project_id) {
  * @return array
  *   The form definition.
  */
-function remote_site_status_server_project_review_form($form, &$form_state, $project_id) {
+function remote_site_status_server_project_review_form($form, &$form_state,
+    $project_id) {
   $project = remote_site_status_server_project_load_or_404($project_id);
   $form['#project_id'] = $project_id;
 
@@ -581,7 +609,8 @@ function remote_site_status_server_project_review_form($form, &$form_state, $pro
   $form['info']['name'] = array(
     '#type' => 'item',
     '#title' => t('Project'),
-    '#markup' => check_plain($project->project) . ' <em>(' . check_plain($project->type) . ')</em>',
+    '#markup' => check_plain($project->project)
+      . ' <em>(' . check_plain($project->type) . ')</em>',
   );
 
   if (!empty($project->latest_version)) {
@@ -602,9 +631,12 @@ function remote_site_status_server_project_review_form($form, &$form_state, $pro
 
   $status_map = array(
     'Needs review' => t('Needs review'),
-    'reviewed' => t('Reviewed'),
+    'Reviewed' => t('Reviewed'),
   );
-  $status_label = !empty($project->security_status) ? ($status_map[$project->security_status] ?? check_plain($project->security_status)) : t('—');
+  $status_label = !empty($project->security_status)
+    ? ($status_map[$project->security_status]
+      ?? check_plain($project->security_status))
+    : t('—');
   $form['info']['security_status'] = array(
     '#type' => 'item',
     '#title' => t('Security status'),
@@ -635,7 +667,8 @@ function remote_site_status_server_project_review_form($form, &$form_state, $pro
     $form['mark_reviewed'] = array(
       '#type' => 'checkbox',
       '#title' => t('Mark as reviewed (stamp %version as the reviewed version)', array('%version' => $project->latest_security_version)),
-      '#default_value' => ($project->security_status === 'Needs review') ? 1 : 0,
+      '#default_value' => ($project->security_status === 'Needs review')
+        ? 1 : 0,
     );
   }
 
@@ -644,10 +677,20 @@ function remote_site_status_server_project_review_form($form, &$form_state, $pro
     '#value' => t('Save'),
   );
 
-  $cancel_url = isset($_GET['destination']) ? $_GET['destination'] : 'admin/config/remote-site-status-server';
+  // Use the destination query parameter when present (e.g. after clicking
+  // a review link from a filtered view), but restrict it to internal paths
+  // only to prevent open-redirect abuse.
+  $cancel_path = 'admin/config/remote-site-status-server';
+  if (!empty($_GET['destination'])) {
+    $dest = (string) $_GET['destination'];
+    // External URLs start with a scheme or protocol-relative //; reject those.
+    if (strpos($dest, '://') === FALSE && strpos($dest, '//') !== 0) {
+      $cancel_path = $dest;
+    }
+  }
   $form['cancel'] = array(
     '#type' => 'markup',
-    '#markup' => ' ' . l(t('Cancel'), $cancel_url),
+    '#markup' => ' ' . l(t('Cancel'), $cancel_path),
   );
 
   return $form;
@@ -665,7 +708,8 @@ function remote_site_status_server_project_review_form($form, &$form_state, $pro
  * @param array $form_state
  *   The form state array.
  */
-function remote_site_status_server_project_review_form_submit($form, &$form_state) {
+function remote_site_status_server_project_review_form_submit($form,
+    &$form_state) {
   $project_id = $form['#project_id'];
 
   $fields = array(

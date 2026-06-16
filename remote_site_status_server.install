@@ -48,7 +48,8 @@ function remote_site_status_server_uninstall() {
   $view_configs = array(
     'views.view.remote_site_status_site_list',
     'views.view.remote_site_status_site_projects',
-    'views.view.remote_site_status_sites_with_projects',
+    'views.view.remote_site_status_sites_per_project',
+    'views.view.remote_site_status_projects_list',
   );
   foreach ($view_configs as $config_name) {
     config($config_name)->delete();
@@ -198,7 +199,7 @@ function remote_site_status_server_schema() {
         'default' => NULL,
       ),
       'security_status' => array(
-        'description' => 'Derived review state: needs_review when latest_security_version is newer than security_reviewed_version, otherwise reviewed.',
+        'description' => 'Derived review state: "Needs review" when latest_security_version is newer than security_reviewed_version, otherwise "Reviewed".',
         'type' => 'varchar',
         'length' => 32,
         'not null' => FALSE,

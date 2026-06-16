@@ -22,7 +22,8 @@
  * Presents a Yes/No widget in the Views UI but queries the security_status
  * column for 'Needs review'. No extra DB column required.
  */
-class remote_site_status_server_handler_filter_needs_review extends views_handler_filter {
+class remote_site_status_server_handler_filter_needs_review
+  extends views_handler_filter {
 
   /**
    * Render the filter widget as a three-option select: Any / Yes / No.
@@ -56,7 +57,9 @@ class remote_site_status_server_handler_filter_needs_review extends views_handle
     $this->ensure_my_table();
     $field = "$this->table_alias.$this->real_field";
     if ($val === 'yes') {
-      $this->query->add_where($this->options['group'], $field, 'Needs review', '=');
+      $this->query->add_where(
+        $this->options['group'], $field, 'Needs review', '='
+      );
     }
     else {
       $this->query->add_where_expression($this->options['group'],
@@ -72,7 +75,8 @@ class remote_site_status_server_handler_filter_needs_review extends views_handle
  * Provides a checkboxes/select filter for the fixed set of project types
  * (module, theme, layout) rather than a free-text field.
  */
-class remote_site_status_server_handler_filter_project_type extends views_handler_filter_in_operator {
+class remote_site_status_server_handler_filter_project_type
+  extends views_handler_filter_in_operator {
 
   /**
    * Populate the value options for the project type filter.
@@ -237,7 +241,9 @@ function remote_site_status_server_views_data() {
     'help' => t('Project type: module, theme or layout.'),
     'field' => array('handler' => 'views_handler_field', 'click sortable' => TRUE),
     'sort' => array('handler' => 'views_handler_sort'),
-    'filter' => array('handler' => 'remote_site_status_server_handler_filter_project_type'),
+    'filter' => array(
+      'handler' => 'remote_site_status_server_handler_filter_project_type',
+    ),
     'argument' => array('handler' => 'views_handler_argument_string'),
   );
 
@@ -296,7 +302,9 @@ function remote_site_status_server_views_data() {
     'title' => t('Needs security review'),
     'help' => t('Boolean filter: Yes = needs_review, No = reviewed or no security releases.'),
     'real field' => 'security_status',
-    'filter' => array('handler' => 'remote_site_status_server_handler_filter_needs_review'),
+    'filter' => array(
+      'handler' => 'remote_site_status_server_handler_filter_needs_review',
+    ),
   );
 
   $data['remote_site_status_project']['security_notes'] = array(

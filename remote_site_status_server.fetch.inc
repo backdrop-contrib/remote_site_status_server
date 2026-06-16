@@ -31,7 +31,9 @@ define('REMOTE_SITE_STATUS_UPDATE_URL', 'https://updates.backdropcms.org/release
  *   A render array containing the fetch form and the embedded view.
  */
 function remote_site_status_server_projects_page() {
-  $build['fetch_form'] = backdrop_get_form('remote_site_status_server_fetch_updates_form');
+  $build['fetch_form'] = backdrop_get_form(
+    'remote_site_status_server_fetch_updates_form'
+  );
   $view_output = views_embed_view('remote_site_status_projects_list');
   if ($view_output !== NULL) {
     $build['projects_list'] = array(
@@ -129,7 +131,8 @@ function remote_site_status_server_fetch_updates_form($form, &$_form_state) {
  * @param array $form_state
  *   The form state array.
  */
-function remote_site_status_server_fetch_updates_form_submit($_form, &$form_state) {
+function remote_site_status_server_fetch_updates_form_submit($_form,
+    &$form_state) {
   $projects = db_select('remote_site_status_project', 'p')
     ->fields('p', array('id', 'project', 'type'))
     ->orderBy('p.project')
@@ -153,7 +156,8 @@ function remote_site_status_server_fetch_updates_form_submit($_form, &$form_stat
     'title' => t('Fetching latest project versions'),
     'operations' => $operations,
     'finished' => 'remote_site_status_server_fetch_batch_finished',
-    'file' => backdrop_get_path('module', 'remote_site_status_server') . '/remote_site_status_server.fetch.inc',
+    'file' => backdrop_get_path('module', 'remote_site_status_server')
+      . '/remote_site_status_server.fetch.inc',
     'progress_message' => t('Checking @current of @total projects...'),
     'error_message' => t('An error occurred while fetching version data.'),
   );
@@ -185,7 +189,8 @@ function remote_site_status_server_fetch_updates_form_submit($_form, &$form_stat
  * @param array $context
  *   Batch API context array (passed by reference).
  */
-function remote_site_status_server_fetch_batch_operation($project_id, $project, $type, &$context) {
+function remote_site_status_server_fetch_batch_operation($project_id,
+    $project, $type, &$context) {
   $context['message'] = t('Fetching release data for @project (@type)...', array(
     '@project' => $project,
     '@type' => $type,
@@ -211,7 +216,7 @@ function remote_site_status_server_fetch_batch_operation($project_id, $project, 
     // If a security release exists but has been superseded by a newer stable
     // release, the fix is already in the latest version. In that case we only
     // flag needs_review when fleet sites are still running a version older than
-    // the security release — otherwise the concern is moot and we clear the flag.
+    // the security release — concern is moot and we clear the flag.
     //
     // If the security release is the latest (or newer than latest), we use the
     // operator-review flow: needs_review until the operator marks it reviewed.
@@ -226,7 +231,9 @@ function remote_site_status_server_fetch_batch_operation($project_id, $project, 
       $latest_ver = $releases['latest_version'];
 
       $sec_superseded = !empty($latest_ver) &&
-        remote_site_status_server_compare_versions($security_ver, $latest_ver) < 0;
+        remote_site_status_server_compare_versions(
+          $security_ver, $latest_ver
+        ) < 0;
 
       if ($sec_superseded) {
         // Security fix is baked into a newer stable release. Flag only if the
@@ -240,7 +247,8 @@ function remote_site_status_server_fetch_batch_operation($project_id, $project, 
 
         $vulnerable = FALSE;
         foreach ($installed as $v) {
-          if (remote_site_status_server_compare_versions($v, $security_ver) < 0) {
+          if (remote_site_status_server_compare_versions(
+              $v, $security_ver) < 0) {
             $vulnerable = TRUE;
             break;
           }
@@ -252,15 +260,19 @@ function remote_site_status_server_fetch_batch_operation($project_id, $project, 
         // review and acknowledge.
         $reviewed = $existing ? $existing->security_reviewed_version : NULL;
 
-        if (empty($reviewed) || remote_site_status_server_compare_versions($security_ver, $reviewed) > 0) {
+        if (empty($reviewed) || remote_site_status_server_compare_versions(
+            $security_ver, $reviewed) > 0) {
           $fields['security_status'] = 'Needs review';
 
           // Prepend a dated stub to security_notes when the toggle is on.
           $settings = config('remote_site_status_server.settings');
           if ($settings->get('security_notes_stub')) {
-            $date_format = $settings->get('security_notes_date_format') ?: 'short';
-            $stub = format_date(time(), $date_format) . ' - ' . $security_ver . ' - ';
-            $current_notes = $existing ? (string) $existing->security_notes : '';
+            $date_format = $settings->get('security_notes_date_format')
+              ?: 'short';
+            $stub = format_date(time(), $date_format)
+              . ' - ' . $security_ver . ' - ';
+            $current_notes = $existing
+              ? (string) $existing->security_notes : '';
             $fields['security_notes'] = trim($stub . "\n" . $current_notes);
           }
         }
@@ -298,7 +310,8 @@ function remote_site_status_server_fetch_batch_operation($project_id, $project, 
  * @param array $_operations
  *   Remaining operations if $success is FALSE (unused on success path).
  */
-function remote_site_status_server_fetch_batch_finished($success, $results, $_operations) {
+function remote_site_status_server_fetch_batch_finished($success, $results,
+    $_operations) {
   if ($success) {
     $updated = $results['updated'] ?? 0;
     $no_upstream = $results['no_upstream'] ?? 0;
@@ -332,13 +345,15 @@ function remote_site_status_server_fetch_batch_finished($success, $results, $_op
  *   (either may be NULL if no matching release exists), or FALSE on failure.
  */
 function remote_site_status_server_fetch_project_releases($project) {
-  $url = REMOTE_SITE_STATUS_UPDATE_URL . '/' . rawurlencode($project) . '/' . BACKDROP_CORE_COMPATIBILITY;
+  $url = REMOTE_SITE_STATUS_UPDATE_URL . '/' . rawurlencode($project)
+    . '/' . BACKDROP_CORE_COMPATIBILITY;
 
   $response = backdrop_http_request($url, array('timeout' => 20));
   $code = isset($response->code) ? (int) $response->code : 0;
 
   if (isset($response->error)) {
-    watchdog('remote_site_status_server', 'Failed to fetch release history for @project: @error', array(
+    watchdog('remote_site_status_server',
+      'Failed to fetch release history for @project: @error', array(
       '@project' => $project,
       '@error' => $response->error,
     ), WATCHDOG_WARNING);
@@ -451,7 +466,8 @@ function remote_site_status_server_parse_release_xml($raw_xml) {
           if (!isset($data['releases'][$version]['terms'][$term_name])) {
             $data['releases'][$version]['terms'][$term_name] = array();
           }
-          $data['releases'][$version]['terms'][$term_name][] = (string) $term->value;
+          $data['releases'][$version]['terms'][$term_name][]
+            = (string) $term->value;
         }
       }
     }

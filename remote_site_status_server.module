@@ -84,7 +84,7 @@ function remote_site_status_server_views_pre_render(&$view) {
   );
   if (in_array($view->name, $views_with_version_span)
       && isset($view->field['latest_version'])) {
-    // Clear any stale rstat-version span from installed_version in the view config.
+    // Clear any stale rstat-version span from installed_version in config.
     if (isset($view->field['installed_version'])) {
       $view->field['installed_version']->options['alter']['alter_text'] = FALSE;
       $view->field['installed_version']->options['alter']['text'] = '';
@@ -108,7 +108,8 @@ function remote_site_status_server_views_pre_render(&$view) {
 function remote_site_status_server_views_api() {
   return array(
     'api' => 3,
-    'path' => backdrop_get_path('module', 'remote_site_status_server') . '/views',
+    'path' => backdrop_get_path('module', 'remote_site_status_server')
+      . '/views',
   );
 }
 
@@ -251,7 +252,9 @@ function remote_site_status_server_menu() {
   $items[$base . '/projects/%/review'] = array(
     'title' => 'Security review',
     'page callback' => 'backdrop_get_form',
-    'page arguments' => array('remote_site_status_server_project_review_form', 4),
+    'page arguments' => array(
+      'remote_site_status_server_project_review_form', 4,
+    ),
     'access arguments' => array('administer Remote Site Status'),
     'file' => 'remote_site_status_server.admin.inc',
     'type' => MENU_CALLBACK,
@@ -330,7 +333,8 @@ function remote_site_status_server_hash_key($key) {
  * @param int $status_code
  *   The HTTP status code to send. Defaults to 200.
  */
-function remote_site_status_server_json_response(array $data, $status_code = 200) {
+function remote_site_status_server_json_response(array $data,
+    $status_code = 200) {
   while (ob_get_level()) {
     ob_end_clean();
   }
@@ -400,31 +404,41 @@ function remote_site_status_server_authorize_request() {
  */
 function remote_site_status_server_report() {
   if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    remote_site_status_server_json_response(array('status' => 'error', 'error' => 'method_not_allowed'), 405);
+    remote_site_status_server_json_response(array(
+      'status' => 'error', 'error' => 'method_not_allowed',
+    ), 405);
   }
 
   $site = remote_site_status_server_authorize_request();
   if (!$site) {
-    remote_site_status_server_json_response(array('status' => 'error', 'error' => 'unauthorized'), 401);
+    remote_site_status_server_json_response(array(
+      'status' => 'error', 'error' => 'unauthorized',
+    ), 401);
   }
 
   // Per-site rate limit: reports are daily fire-and-forget, so 30/hour is ample
   // headroom for retries and testing while capping a leaked-key flood.
   $flood_id = 'remote_site_status_site_' . $site->id;
   if (!flood_is_allowed('remote_site_status_report', 30, 3600, $flood_id)) {
-    remote_site_status_server_json_response(array('status' => 'error', 'error' => 'rate_limited'), 429);
+    remote_site_status_server_json_response(array(
+      'status' => 'error', 'error' => 'rate_limited',
+    ), 429);
   }
 
   // Payload cap (256 KB). A report of 100+ projects is only a few KB, so this
   // is purely an abuse guard.
   $body = file_get_contents('php://input');
   if (strlen($body) > 262144) {
-    remote_site_status_server_json_response(array('status' => 'error', 'error' => 'payload_too_large'), 413);
+    remote_site_status_server_json_response(array(
+      'status' => 'error', 'error' => 'payload_too_large',
+    ), 413);
   }
 
   $data = json_decode($body);
   if (!is_object($data)) {
-    remote_site_status_server_json_response(array('status' => 'error', 'error' => 'invalid_payload'), 400);
+    remote_site_status_server_json_response(array(
+      'status' => 'error', 'error' => 'invalid_payload',
+    ), 400);
   }
 
   remote_site_status_server_ingest_report($site, $data);
@@ -455,10 +469,14 @@ function remote_site_status_server_ingest_report($site, $data) {
   // 1. Update the site's reported facts and mark it seen.
   db_update('remote_site_status_site')
     ->fields(array(
-      'backdrop_version' => isset($data->backdrop_version) ? (string) $data->backdrop_version : NULL,
-      'php_version' => isset($data->php_version) ? (string) $data->php_version : NULL,
-      'db_driver' => isset($data->db_driver) ? (string) $data->db_driver : NULL,
-      'db_version' => isset($data->db_version) ? (string) $data->db_version : NULL,
+      'backdrop_version' => isset($data->backdrop_version)
+        ? (string) $data->backdrop_version : NULL,
+      'php_version' => isset($data->php_version)
+        ? (string) $data->php_version : NULL,
+      'db_driver' => isset($data->db_driver)
+        ? (string) $data->db_driver : NULL,
+      'db_version' => isset($data->db_version)
+        ? (string) $data->db_version : NULL,
       'cron_last' => isset($data->cron_last) ? (int) $data->cron_last : NULL,
       'last_seen' => REQUEST_TIME,
     ))
@@ -466,7 +484,8 @@ function remote_site_status_server_ingest_report($site, $data) {
     ->execute();
 
   // 2/3. Wholesale-replace this site's installed-version rows. Collecting by
-  // machine name first dedupes a malformed payload before the unique-key insert.
+  // machine name first dedupes a malformed payload before the
+  // unique-key insert.
   db_delete('remote_site_status_site_project')
     ->condition('site_id', $site->id)
     ->execute();
@@ -483,13 +502,16 @@ function remote_site_status_server_ingest_report($site, $data) {
 
     foreach ($items as $name => $project) {
       $type = !empty($project->type) ? (string) $project->type : 'module';
-      $project_id = remote_site_status_server_ensure_project((string) $project->project, $type);
+      $project_id = remote_site_status_server_ensure_project(
+        (string) $project->project, $type
+      );
       db_insert('remote_site_status_site_project')
         ->fields(array(
           'site_id' => $site->id,
           'project_id' => $project_id,
           'name' => $name,
-          'installed_version' => isset($project->installed_version) ? (string) $project->installed_version : NULL,
+          'installed_version' => isset($project->installed_version)
+            ? (string) $project->installed_version : NULL,
         ))
         ->execute();
     }
@@ -544,11 +566,14 @@ function remote_site_status_server_ensure_project($project, $type) {
 function remote_site_status_server_status() {
   $site = remote_site_status_server_authorize_request();
   if (!$site) {
-    remote_site_status_server_json_response(array('status' => 'error', 'error' => 'unauthorized'), 401);
+    remote_site_status_server_json_response(array(
+      'status' => 'error', 'error' => 'unauthorized',
+    ), 401);
   }
 
   $info = system_get_info('module', 'remote_site_status_server');
-  $version = (is_array($info) && !empty($info['version'])) ? $info['version'] : NULL;
+  $version = (is_array($info) && !empty($info['version']))
+    ? $info['version'] : NULL;
 
   remote_site_status_server_json_response(array(
     'status' => 'ok',
