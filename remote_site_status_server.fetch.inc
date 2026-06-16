@@ -131,8 +131,7 @@ function remote_site_status_server_fetch_updates_form($form, &$_form_state) {
  * @param array $form_state
  *   The form state array.
  */
-function remote_site_status_server_fetch_updates_form_submit($_form,
-    &$form_state) {
+function remote_site_status_server_fetch_updates_form_submit($_form, &$form_state) {
   $projects = db_select('remote_site_status_project', 'p')
     ->fields('p', array('id', 'project', 'type'))
     ->orderBy('p.project')
@@ -189,8 +188,7 @@ function remote_site_status_server_fetch_updates_form_submit($_form,
  * @param array $context
  *   Batch API context array (passed by reference).
  */
-function remote_site_status_server_fetch_batch_operation($project_id,
-    $project, $type, &$context) {
+function remote_site_status_server_fetch_batch_operation($project_id, $project, $type, &$context) {
   $context['message'] = t('Fetching release data for @project (@type)...', array(
     '@project' => $project,
     '@type' => $type,
@@ -310,8 +308,7 @@ function remote_site_status_server_fetch_batch_operation($project_id,
  * @param array $_operations
  *   Remaining operations if $success is FALSE (unused on success path).
  */
-function remote_site_status_server_fetch_batch_finished($success, $results,
-    $_operations) {
+function remote_site_status_server_fetch_batch_finished($success, $results, $_operations) {
   if ($success) {
     $updated = $results['updated'] ?? 0;
     $no_upstream = $results['no_upstream'] ?? 0;

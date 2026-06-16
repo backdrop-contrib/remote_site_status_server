@@ -101,8 +101,7 @@ function remote_site_status_server_stash_new_key($site_id, $key) {
  * @return array
  *   The form definition.
  */
-function remote_site_status_server_site_form($form, &$form_state,
-    $site_id = NULL) {
+function remote_site_status_server_site_form($form, &$form_state, $site_id = NULL) {
   $site = NULL;
   if (!empty($site_id)) {
     $site = remote_site_status_server_site_load_or_404($site_id);
@@ -316,8 +315,7 @@ function remote_site_status_server_site_regenerate_submit($form, &$form_state) {
  * @return array
  *   The confirm form.
  */
-function remote_site_status_server_site_revoke_form($form, &$form_state,
-    $site_id) {
+function remote_site_status_server_site_revoke_form($form, &$form_state, $site_id) {
   $site = remote_site_status_server_site_load_or_404($site_id);
   $form['#site_id'] = $site_id;
   $form['#reactivate'] = ($site->status === 'revoked');
@@ -351,8 +349,7 @@ function remote_site_status_server_site_revoke_form($form, &$form_state,
  * @param array $form_state
  *   The form state array.
  */
-function remote_site_status_server_site_revoke_form_submit($form,
-    &$form_state) {
+function remote_site_status_server_site_revoke_form_submit($form, &$form_state) {
   $new_status = !empty($form['#reactivate']) ? 'active' : 'revoked';
   db_update('remote_site_status_site')
     ->fields(array('status' => $new_status))
@@ -378,8 +375,7 @@ function remote_site_status_server_site_revoke_form_submit($form,
  * @return array
  *   The confirm form.
  */
-function remote_site_status_server_site_delete_form($form, &$form_state,
-    $site_id) {
+function remote_site_status_server_site_delete_form($form, &$form_state, $site_id) {
   $site = remote_site_status_server_site_load_or_404($site_id);
   $form['#site_id'] = $site_id;
 
@@ -404,8 +400,7 @@ function remote_site_status_server_site_delete_form($form, &$form_state,
  * @param array $form_state
  *   The form state array.
  */
-function remote_site_status_server_site_delete_form_submit($form,
-    &$form_state) {
+function remote_site_status_server_site_delete_form_submit($form, &$form_state) {
   $site_id = $form['#site_id'];
 
   db_delete('remote_site_status_site_project')
@@ -595,8 +590,7 @@ function remote_site_status_server_project_load_or_404($project_id) {
  * @return array
  *   The form definition.
  */
-function remote_site_status_server_project_review_form($form, &$form_state,
-    $project_id) {
+function remote_site_status_server_project_review_form($form, &$form_state, $project_id) {
   $project = remote_site_status_server_project_load_or_404($project_id);
   $form['#project_id'] = $project_id;
 
@@ -708,8 +702,7 @@ function remote_site_status_server_project_review_form($form, &$form_state,
  * @param array $form_state
  *   The form state array.
  */
-function remote_site_status_server_project_review_form_submit($form,
-    &$form_state) {
+function remote_site_status_server_project_review_form_submit($form, &$form_state) {
   $project_id = $form['#project_id'];
 
   $fields = array(

@@ -106,7 +106,7 @@
    * Reads data attributes on the rstat-project-version span written by the
    * sites-with-projects view rewrite: data-latest, data-security. When the
    * security version is present and equal to (or newer than) the latest version
-   * the project version label is coloured red to signal urgency.
+   * the project version value is coloured red to signal urgency.
    */
   Backdrop.behaviors.remoteSiteStatusProjectVersionHighlight = {
     attach: function (context) {
@@ -147,11 +147,11 @@
   };
 
   /**
-   * Highlight module rows where installed version is behind latest or security.
+   * Colour the latest version value on rows where an update is available.
    *
-   * Reads data attributes written by the Views "installed_version" field
-   * rewrite: data-installed, data-latest, data-security. Security takes
-   * priority and marks the row red; out-of-date-only marks it blue.
+   * Reads data attributes on the rstat-version span written by hook_views_pre_render:
+   * data-installed, data-latest, data-security. Security takes priority and
+   * colours the latest version value red; out-of-date-only colours it blue.
    */
   Backdrop.behaviors.remoteSiteStatusVersionHighlight = {
     attach: function (context) {

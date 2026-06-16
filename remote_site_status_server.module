@@ -333,8 +333,7 @@ function remote_site_status_server_hash_key($key) {
  * @param int $status_code
  *   The HTTP status code to send. Defaults to 200.
  */
-function remote_site_status_server_json_response(array $data,
-    $status_code = 200) {
+function remote_site_status_server_json_response(array $data, $status_code = 200) {
   while (ob_get_level()) {
     ob_end_clean();
   }
