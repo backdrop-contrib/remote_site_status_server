@@ -42,7 +42,7 @@ Client sites should point their **Server base URL** to this installation (e.g. `
 
 ## Issues
 
-Bugs and feature requests should be reported in the Issue Queue: https://github.com/backdrop-contrib/remote_site_status_client/issues
+Bugs and feature requests should be reported in the Issue Queue: https://github.com/backdrop-contrib/remote_site_status_server/issues
 
 ## Current Maintainer(s)
 - Steve Moorhouse (albanycomputers) (https://github.com/albanycomputers)
