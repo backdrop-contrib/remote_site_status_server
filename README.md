@@ -22,7 +22,7 @@ As a beta release, the core API endpoints, site registration, project version fe
 
 - Backdrop CMS 1.x
 - PHP 8.0+ (While the code may technically function with PHP 7.4 at this time, we strictly require PHP 8.0+ and will not address issues related to older PHP versions.)
-- Companion module: [Remote Site Status Client](../remote_site_status_client) (installed on each managed client site)
+- Companion module: [Remote Site Status Client](https://github.com/backdrop-contrib/remote_site_status_client) (installed on each managed client site)
 
 ## Installation
 
@@ -42,7 +42,7 @@ Client sites should point their **Server base URL** to this installation (e.g. `
 
 ## Issues
 
-Bugs and feature requests should be reported in the Issue Queue: https://github.com/albanycomputers/remote_site_status/issues
+Bugs and feature requests should be reported in the Issue Queue: https://github.com/backdrop-contrib/remote_site_status_client/issues
 
 ## Current Maintainer(s)
 - Steve Moorhouse (albanycomputers) (https://github.com/albanycomputers)
